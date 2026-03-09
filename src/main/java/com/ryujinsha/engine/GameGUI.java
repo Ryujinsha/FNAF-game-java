@@ -10,7 +10,9 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.net.URL;
 
-public class GameGUI extends JFrame {
+public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
+    private MainFrame mainFrame; // ✨ REFACTOR 2: Referensi ke window utama
+
     // --- 1. DATA LOGIC GAME ---
     private Player player;
     private EnemyOdd enemyA;
@@ -20,6 +22,7 @@ public class GameGUI extends JFrame {
     private boolean areEnemiesActive = false;
     private int tickCounter = 0;
     private boolean isGameOver = false;
+    private int jokeClickCount = 0;
 
     // --- 2. KOMPONEN UI UTAMA ---
     private JLabel statusLabel;
@@ -35,7 +38,7 @@ public class GameGUI extends JFrame {
     private JLabel endTitleLabel;
     private JLabel endMessageLabel;
 
-    // ✨ GAMBAR HANTU DI PINTU (BARU)
+    // ✨ GAMBAR HANTU DI PINTU
     private Image leftDoorVisual = null;
     private Image rightDoorVisual = null;
 
@@ -43,12 +46,12 @@ public class GameGUI extends JFrame {
     private Timer gameLoopTimer; 
     private Timer quoteTimer;
 
-    public GameGUI() {
+    // ✨ REFACTOR 3: Konstruktor menerima MainFrame
+    public GameGUI(MainFrame mainFrame) {
+        this.mainFrame = mainFrame;
         initGameData();
 
-        setTitle("Night Shift Survival - GUI Build v1.3 (Visual Doors)");
-        setSize(1300, 900); 
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        // setSize, setTitle, setDefaultCloseOperation dihapus karena diurus oleh MainFrame
         setLayout(new BorderLayout());
 
         layeredPane = new JLayeredPane();
@@ -61,13 +64,14 @@ public class GameGUI extends JFrame {
 
     private void initGameData() {
         this.player = new Player("Night Guard");
-        this.enemyA = new EnemyOdd("The Twin (Odd)", 20);
-        this.enemyB = new EnemyEven("The Twin (Even)", 20);
-        this.enemyC = new EnemyRandom("The Shadow", 15);
+        this.enemyA = new EnemyOdd("Epstein", 20);  
+        this.enemyB = new EnemyEven("Diddy", 20);   
+        this.enemyC = new EnemyRandom("Wowo", 15);  
         this.timeSystem = new TimeSystem();
         this.areEnemiesActive = false;
         this.tickCounter = 0;
         this.isGameOver = false;
+        this.jokeClickCount = 0; 
     }
 
     private void setupUI() {
@@ -79,24 +83,19 @@ public class GameGUI extends JFrame {
         topPanel.add(statusLabel);
         add(topPanel, BorderLayout.NORTH);
 
-        // ✨ UPDATE: Office Panel sekarang bisa merender Hantu di pintu!
-        // ✨ UPDATE: Office Panel dengan Layering Background
-        // ✨ UPDATE: Office Panel dengan Layering Background, Hantu, dan Pintu Animasi
         officePanel = new JPanel() {
-            private Image bgBawah; // Layer 1: Lorong luar
-            private Image bgAtas;  // Layer 3: Dinding ruangan
-            private Image doorLeftImg;  // Layer 4: Pintu Kiri
-            private Image doorRightImg; // Layer 4: Pintu Kanan
+            private Image bgBawah; 
+            private Image bgAtas;  
+            private Image doorLeftImg;  
+            private Image doorRightImg; 
 
             {
-                // Load semua aset visual
                 URL urlBawah = getClass().getResource("/assets/office_bg.jpg");
                 if (urlBawah != null) bgBawah = new ImageIcon(urlBawah).getImage();
 
                 URL urlAtas = getClass().getResource("/assets/office_front.png");
                 if (urlAtas != null) bgAtas = new ImageIcon(urlAtas).getImage();
 
-                // Load aset Pintu (Wajib transparan selain pintunya)
                 URL urlDoorL = getClass().getResource("/assets/door_left.png");
                 if (urlDoorL != null) doorLeftImg = new ImageIcon(urlDoorL).getImage();
 
@@ -108,9 +107,6 @@ public class GameGUI extends JFrame {
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
 
-                // --- URUTAN LUKISAN (Z-INDEX) SANGAT KRUSIAL ---
-
-                // LAYER 1: Gambar Background Lorong (Paling dasar)
                 if (bgBawah != null) {
                     g.drawImage(bgBawah, 0, 0, getWidth(), getHeight(), this);
                 } else {
@@ -118,7 +114,6 @@ public class GameGUI extends JFrame {
                     g.fillRect(0, 0, getWidth(), getHeight());
                 }
 
-                // LAYER 2: Gambar Hantu (Hanya dilukis JIKA PINTU TERBUKA)
                 int doorW = getWidth() / 4; 
                 int doorH = (int)(getHeight() * 0.7); 
                 int doorY = getHeight() - doorH - 20;
@@ -133,18 +128,14 @@ public class GameGUI extends JFrame {
                     g.drawImage(rightDoorVisual, rightX, doorY, doorW, doorH, this);
                 }
 
-                // LAYER 3: Gambar Dinding Office (Menutupi hantu yang badannya kelebaran)
                 if (bgAtas != null) {
                     g.drawImage(bgAtas, 0, 0, getWidth(), getHeight(), this);
                 }
 
-                // LAYER 4: PINTU BESI (Menutupi segalanya di lorong)
-                // Jika isLeftDoorClosed() bernilai true, lukis pintu kirinya!
                 if (player.isLeftDoorClosed() && doorLeftImg != null) {
                     g.drawImage(doorLeftImg, 0, 0, getWidth(), getHeight(), this);
                 }
 
-                // Jika isRightDoorClosed() bernilai true, lukis pintu kanannya!
                 if (player.isRightDoorClosed() && doorRightImg != null) {
                     g.drawImage(doorRightImg, 0, 0, getWidth(), getHeight(), this);
                 }
@@ -163,9 +154,7 @@ public class GameGUI extends JFrame {
         setupBottomControls();
     }
 
-    // ✨ METHOD BARU: Logika penentuan gambar pintu
     private void updateDoorVisuals() {
-        // Cek Pintu Kiri
         Enemy leftEnemy = getEnemyAtDoor("LEFT");
         if (leftEnemy != null) {
             String path = player.isLeftLightOn() ? getSpritePath(leftEnemy) : "/assets/enemies/silhouette.png";
@@ -175,7 +164,6 @@ public class GameGUI extends JFrame {
             leftDoorVisual = null;
         }
 
-        // Cek Pintu Kanan
         Enemy rightEnemy = getEnemyAtDoor("RIGHT");
         if (rightEnemy != null) {
             String path = player.isRightLightOn() ? getSpritePath(rightEnemy) : "/assets/enemies/silhouette.png";
@@ -185,11 +173,9 @@ public class GameGUI extends JFrame {
             rightDoorVisual = null;
         }
 
-        // Paksa UI menggambar ulang layarnya
         officePanel.repaint();
     }
 
-    // Helper untuk menentukan path gambar berdasarkan hantu yang datang
     private String getSpritePath(Enemy enemy) {
         if (enemy instanceof EnemyOdd) return "/assets/enemies/enemy_a.png";
         if (enemy instanceof EnemyEven) return "/assets/enemies/enemy_b.png";
@@ -212,7 +198,6 @@ public class GameGUI extends JFrame {
         });
     }
 
-    // ... [setupTabletOverlay dan setupEndScreen SAMA seperti v1.2] ...
     private void setupTabletOverlay() {
         tabletOverlayPanel = new JPanel();
         tabletOverlayPanel.setBackground(new Color(0, 0, 0, 200)); 
@@ -237,6 +222,24 @@ public class GameGUI extends JFrame {
             });
             mapPanel.add(btnCam);
         }
+        JButton btnJoke = new JButton("DO NOT PUSH"); 
+        btnJoke.setBackground(Color.DARK_GRAY);
+        btnJoke.setForeground(Color.YELLOW); 
+        btnJoke.setFocusPainted(false);
+        btnJoke.addActionListener(e -> {
+            if (isGameOver) return; 
+
+            jokeClickCount++; 
+            
+            if (jokeClickCount > 3) {
+                logEvent("🤡 [FATAL ERROR] Seseorang tidak suka kau bermain-main...");
+                triggerJumpscare(enemyC); 
+            } else {
+                logEvent("🤡 [SYSTEM] Memutar audio rahasia... (" + jokeClickCount + "/3)");
+                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/joke_sound.wav");
+            }
+        });
+        mapPanel.add(btnJoke);
         mapPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(Color.GREEN), "MAP", 0, 0, null, Color.GREEN));
         tabletOverlayPanel.add(mapPanel, BorderLayout.EAST);
     }
@@ -267,31 +270,26 @@ public class GameGUI extends JFrame {
         btnQuit.setBackground(Color.DARK_GRAY);
         btnQuit.setForeground(Color.RED);
         btnQuit.addActionListener(e -> System.exit(0));
-        btnPanel.add(btnRetry);
+        
         JButton btnMenu = new JButton("MAIN MENU");
         btnMenu.setFont(new Font("Consolas", Font.BOLD, 20));
         btnMenu.setBackground(Color.DARK_GRAY);
         btnMenu.setForeground(Color.WHITE);
         btnMenu.addActionListener(e -> {
-            // 1. Hentikan semua suara yang mungkin masih berjalan (termasuk timer quote)
             if (quoteTimer != null && quoteTimer.isRunning()) {
                 quoteTimer.stop();
             }
             com.ryujinsha.system.AudioManager.stopAllSounds();
             
-            // 2. Tutup window GameGUI saat ini
-            this.dispose(); 
-            
-            // 3. Kembalikan pemain ke Main Menu
-            SwingUtilities.invokeLater(() -> {
-                MainMenuGUI menu = new MainMenuGUI();
-                menu.setVisible(true);
-            });
+            // ✨ REFACTOR 4: Memanggil MainFrame untuk transisi ke Menu Utama
+            mainFrame.showScreen("MENU");
         });
 
+        btnPanel.removeAll(); 
         btnPanel.add(btnRetry);
-        btnPanel.add(btnMenu); // Masukkan tombol menu ke panel
-        // ...
+        btnPanel.add(btnMenu); 
+        
+        endScreenPanel.add(btnPanel, gbc); 
     }
 
     private void setupBottomControls() {
@@ -324,18 +322,29 @@ public class GameGUI extends JFrame {
             }
         });
 
-        // ✨ UPDATE: Trigger visual saat tombol ditekan
         btnLeftDoor.addActionListener(e -> {
             if (isGameOver) return;
             player.toggleLeftDoor();
             btnLeftDoor.setText("🚪 L-Door [" + (player.isLeftDoorClosed() ? "CLOSED" : "OPEN") + "]");
-            updateDoorVisuals(); // Refresh gambar pintu
+            
+            if (player.isLeftDoorClosed()) {
+                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_close.wav");
+            } else {
+                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+            }
+            updateDoorVisuals(); 
         });
 
         btnRightDoor.addActionListener(e -> {
             if (isGameOver) return;
             player.toggleRightDoor();
             btnRightDoor.setText("🚪 R-Door [" + (player.isRightDoorClosed() ? "CLOSED" : "OPEN") + "]");
+            
+            if (player.isRightDoorClosed()) {
+                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_close.wav");
+            } else {
+                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+            }
             updateDoorVisuals(); 
         });
 
@@ -343,15 +352,8 @@ public class GameGUI extends JFrame {
             if (isGameOver) return;
             player.toggleLeftLight();
             btnLeftLight.setText("💡 L-Light [" + (player.isLeftLightOn() ? "ON" : "OFF") + "]");
+            com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/light_switch.wav");
             checkVisibility("LEFT"); 
-            updateDoorVisuals(); 
-        });
-
-        btnRightLight.addActionListener(e -> {
-            if (isGameOver) return;
-            player.toggleRightLight();
-            btnRightLight.setText("💡 R-Light [" + (player.isRightLightOn() ? "ON" : "OFF") + "]");
-            checkVisibility("RIGHT");
             updateDoorVisuals(); 
         });
     }
@@ -384,13 +386,24 @@ public class GameGUI extends JFrame {
         }
         
         player.applyStress();
+
+        boolean isIdle = !player.isTabletOpen() && 
+                         !player.isLeftDoorClosed() && 
+                         !player.isRightDoorClosed() && 
+                         !player.isLeftLightOn() && 
+                         !player.isRightLightOn();
+                         
+        if (isIdle) {
+            player.getSanity().recoverSanity(1);
+            logEvent("🧘‍♂️ [RELAX] Bernapas dalam gelap... Sanity +1%");
+        }
         
         if (areEnemiesActive) {
             enemyA.act(); enemyB.act(); enemyC.act();
             checkDoorDefense(enemyA); 
             checkDoorDefense(enemyB); 
             checkDoorDefense(enemyC);
-            updateDoorVisuals(); // ✨ UPDATE VISUAL SETIAP MUSUH BERGERAK
+            updateDoorVisuals(); 
         }
         
         updateStatusLabel();
@@ -411,15 +424,13 @@ public class GameGUI extends JFrame {
             
             if (isDefended) {
                 logEvent("💥 *BAM BAM BAM* " + enemy.getName() + " memukul pintu!");
-                
-                // ✨ AUDIO TRIGGER: Gedoran Pintu Acak (1-3)
                 int randomBang = (int)(Math.random() * 3) + 1;
                 com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_bang_" + randomBang + ".wav");
                 
                 player.getSanity().dropSanity(10);
                 enemy.retreat(7);
-                updateDoorVisuals(); // Hilangkan gambar jika hantu mundur
-            }else if (enemy.getPatienceTimer() <= 0) {
+                updateDoorVisuals(); 
+            } else if (enemy.getPatienceTimer() <= 0) {
                 triggerJumpscare(enemy);
             }
         }
@@ -435,25 +446,56 @@ public class GameGUI extends JFrame {
         if (timeSystem.isMorning()) {
             endGame("VICTORY", "06:00 AM. Matahari terbit. Kamu selamat malam ini.", Color.GREEN);
         } else if (player.getSanity().isInsane() || player.getPower().isPowerEmpty()) {
-            endGame("GAME OVER", "Kewarasan/Listrik habis. Kegelapan menelanmu.", Color.RED);
+            // ✨ MODIFIKASI: Panggil Wowo (enemyC) dengan jeda waktu yang menegangkan
+            triggerJumpscare(enemyC, true);
         }
     }
 
+    // Method original untuk menjaga kompatibilitas dengan Pintu dan Easter Egg (tanpa delay)
     private void triggerJumpscare(Enemy enemy) {
+        triggerJumpscare(enemy, false);
+    }
+
+    // ✨ MODIFIKASI: Method baru yang mendukung delay dan penyembunyian UI
+    private void triggerJumpscare(Enemy enemy, boolean withDelay) {
         if (isGameOver) return;
         isGameOver = true;
         gameLoopTimer.stop(); 
         tabletOverlayPanel.setVisible(false);
-        player.toggleTablet(); 
-        btnTablet.setText("📱 Tablet [OFF]");
+        
+        // 1. Sembunyikan seluruh kontrol pemain untuk menciptakan keputusasaan
+        btnTablet.setVisible(false);
+        btnLeftDoor.setVisible(false);
+        btnRightDoor.setVisible(false);
+        btnLeftLight.setVisible(false);
+        btnRightLight.setVisible(false);
+
+        // 2. Hentikan semua suara latar
         com.ryujinsha.system.AudioManager.stopAllSounds();
+
+        if (withDelay) {
+            logEvent("🔌 [SYSTEM FAILURE] Sistem mati total. Kegelapan dan keheningan menyelimuti...");
+            // Timer suspense selama 3 detik (3000ms) sebelum Wowo menerkam
+            Timer suspenseTimer = new Timer(3000, e -> {
+                executeJumpscareVisuals(enemy);
+            });
+            suspenseTimer.setRepeats(false);
+            suspenseTimer.start();
+        } else {
+            // Langsung eksekusi untuk kasus gagal menahan pintu
+            executeJumpscareVisuals(enemy);
+        }
+    }
+
+    // ✨ METODE BARU: Menangani murni perenderan gambar dan suara jumpscare
+    private void executeJumpscareVisuals(Enemy enemy) {
         com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/jumpscare_scream.wav");
         String imagePath = enemy.getJumpscarePath();
         
         JPanel jumpscarePanel = new JPanel() {
             private Image jsImage;
             {
-                setOpaque(false); // ✨ KUNCI UTAMA FIX BACKGROUND PUTIH!
+                setOpaque(false); 
                 URL imgUrl = getClass().getResource(imagePath);
                 if (imgUrl != null) jsImage = new ImageIcon(imgUrl).getImage();
             }
@@ -471,30 +513,33 @@ public class GameGUI extends JFrame {
 
         Timer delayTimer = new Timer(1500, e -> {
             layeredPane.remove(jumpscarePanel); 
-            endGame("GAME OVER", "Kamu diterkam oleh " + enemy.getName(), Color.RED);
+            endGame("GAME OVER", "Kamu diterkam oleh " + enemy.getName(), Color.RED, enemy);
         });
         delayTimer.setRepeats(false); 
         delayTimer.start();
     }
 
-// Method original untuk kondisi menang atau mati tanpa jumpscare
     private void endGame(String title, String msg, Color titleColor) {
         endGame(title, msg, titleColor, null);
     }
 
-    // Method overload baru untuk menangani audio jumpscare
     private void endGame(String title, String msg, Color titleColor, Enemy killer) {
         if (!isGameOver) isGameOver = true; 
         gameLoopTimer.stop();
         endTitleLabel.setText(title);
         endTitleLabel.setForeground(titleColor);
         endMessageLabel.setText(msg);
+        
         endScreenPanel.setBounds(0, 0, layeredPane.getWidth(), layeredPane.getHeight());
         endScreenPanel.setVisible(true); 
+        
+        // Memaksa Swing menyusun ulang layout tombol agar tidak hilang
+        endScreenPanel.revalidate();
+        endScreenPanel.repaint();
+
         layeredPane.revalidate();
         layeredPane.repaint();
 
-        // ✨ AUDIO TRIGGER: Putar quote musuh setelah hening 1.5 detik
         if (killer != null && killer.getQuotePath() != null) {
             System.out.println("[DEBUG-AUDIO] Menyiapkan Timer Quote untuk path: " + killer.getQuotePath());
             
@@ -515,7 +560,6 @@ public class GameGUI extends JFrame {
         }
         com.ryujinsha.system.AudioManager.stopAllSounds();
 
-        initGameData();
         logEvent("\n--- REBOOTING SYSTEM ---");
         initGameData();
         endScreenPanel.setVisible(false);
@@ -539,7 +583,7 @@ public class GameGUI extends JFrame {
     }
 
     public void startGame() {
-        setVisible(true);
+        // ✨ REFACTOR 5: setVisible(true) dihapus, karena CardLayout menanganinya
         updateStatusLabel();
         logEvent("Sistem online. Malam pertama dimulai.");
         gameLoopTimer.start();

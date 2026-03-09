@@ -4,20 +4,18 @@ import javax.swing.*;
 import java.awt.*;
 import java.net.URL;
 
-public class MainMenuGUI extends JFrame {
+public class MainMenuGUI extends JPanel { // ✨ 1. Berubah dari JFrame menjadi JPanel
+    private MainFrame mainFrame; // ✨ 2. Menampung referensi ke window utama
 
-    public MainMenuGUI() {
-        setTitle("Night Shift Survival - Main Menu");
-        setSize(1300, 900);
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setLocationRelativeTo(null); // Memastikan window muncul di tengah layar
+    public MainMenuGUI(MainFrame mainFrame) { 
+        this.mainFrame = mainFrame;
+        setLayout(new BorderLayout()); // Mengatur layout dasar panel ini
 
         // ✨ LAYER BACKGROUND DENGAN GAMBAR MUSUH
         JPanel bgPanel = new JPanel() {
             private Image enemyImage;
             {
-                // Anda bisa mengganti enemy_a.png dengan gambar musuh lain atau siluet
-                URL imgUrl = getClass().getResource("/assets/enemies/enemy_a.png");
+                URL imgUrl = getClass().getResource("/assets/enemies/enemy_c.png");
                 if (imgUrl != null) {
                     enemyImage = new ImageIcon(imgUrl).getImage();
                 }
@@ -26,11 +24,9 @@ public class MainMenuGUI extends JFrame {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                // Latar belakang hitam pekat
                 g.setColor(Color.BLACK);
                 g.fillRect(0, 0, getWidth(), getHeight());
 
-                // Menggambar musuh di tengah dengan ukuran yang disesuaikan
                 if (enemyImage != null) {
                     int imgWidth = 400; 
                     int imgHeight = 600;
@@ -40,7 +36,7 @@ public class MainMenuGUI extends JFrame {
                 }
             }
         };
-        bgPanel.setLayout(new GridBagLayout()); // Untuk menempatkan tombol di tengah
+        bgPanel.setLayout(new GridBagLayout()); 
 
         // ✨ KOMPONEN UI MENU
         JPanel uiPanel = new JPanel();
@@ -66,8 +62,7 @@ public class MainMenuGUI extends JFrame {
         btnQuit.setAlignmentX(Component.CENTER_ALIGNMENT);
         btnQuit.setFocusPainted(false);
 
-        // Memberikan jarak antar elemen
-        uiPanel.add(Box.createVerticalStrut(400)); // Mendorong menu ke bawah gambar musuh
+        uiPanel.add(Box.createVerticalStrut(400)); 
         uiPanel.add(titleLabel);
         uiPanel.add(Box.createVerticalStrut(50));
         uiPanel.add(btnPlay);
@@ -75,18 +70,12 @@ public class MainMenuGUI extends JFrame {
         uiPanel.add(btnQuit);
 
         bgPanel.add(uiPanel);
-        add(bgPanel);
+        add(bgPanel, BorderLayout.CENTER); // Memasukkan bgPanel ke dalam MainMenuGUI
 
-        // ✨ LOGIKA TOMBOL
+        // ✨ 3. LOGIKA TOMBOL DIPERBARUI
         btnPlay.addActionListener(e -> {
-            this.dispose(); // Menutup window Main Menu secara permanen dari memori
-            
-            // Membuka GameGUI baru
-            SwingUtilities.invokeLater(() -> {
-                GameGUI game = new GameGUI();
-                game.setLocationRelativeTo(null);
-                game.startGame();
-            });
+            // Memerintahkan MainFrame untuk mengganti 'kartu' ke layar Cutscene
+            mainFrame.showScreen("CUTSCENE");
         });
 
         btnQuit.addActionListener(e -> System.exit(0));
