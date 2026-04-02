@@ -4,98 +4,197 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.net.URL;
 
-public class CutsceneGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
-    private MainFrame mainFrame; // ✨ REFACTOR 2: Menyimpan referensi MainFrame
+public class CutsceneGUI extends JPanel {
+    private MainFrame mainFrame;
+    private JLayeredPane layeredPane; 
 
     private JTextArea textArea;
     private String fullText;
     private int charIndex = 0;
     private Timer typewriterTimer;
-    private boolean isFinished = false;
-    private JLabel hintLabel;
+    private boolean isTextFinished = false;
 
-    public CutsceneGUI(MainFrame mainFrame) { // ✨ REFACTOR 3: Menerima parameter MainFrame
+    private int playerX = -50; 
+    private int playerY = 220;
+    private Image currentPlayerImg;
+    private Image imgFront, imgBack, imgLeft, imgRight;
+    private Image bgRoad1, bgRoad2, currentBg;
+    
+    private Timer animationTimer;
+    private int animPhase = 0; 
+    private PixelButton btnOpenDoor; 
+    private PixelButton btnSkip; // ✨ TOMBOL SKIP BARU
+    private boolean[] dialogueTriggered = new boolean[5]; 
+
+    public CutsceneGUI(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
-        
-        // Hapus setTitle, setSize, dll. karena ukuran diatur oleh MainFrame
-        setBackground(Color.BLACK); // Mengganti getContentPane().setBackground()
+        setBackground(Color.BLACK);
         setLayout(new BorderLayout());
 
-        // Narasi Intro
-        fullText = "Tahun 2026...\n\n" +
-                   "Mereka bilang ini hanya pekerjaan mudah.\n" +
-                   "Menjaga tempat ini dari tengah malam hingga jam 6 pagi.\n" +
-                   "Hanya mengawasi kamera dan memastikan pintu terkunci.\n\n" +
-                   "Tapi belakangan ini, barang-barang berpindah dengan sendirinya...\n" +
-                   "Dan aku bersumpah, bayangan di lorong itu baru saja bergerak.\n\n" +
-                   "Shift malamku dimulai sekarang.";
+        loadAssets();
+        
+        layeredPane = new JLayeredPane();
+        add(layeredPane, BorderLayout.CENTER);
 
-        // Menggunakan JTextArea agar teks bisa multi-baris secara rapi
+        JPanel animPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                
+                if (currentBg != null) {
+                    g2d.drawImage(currentBg, 0, 0, getWidth(), getHeight(), this);
+                }
+                if (currentPlayerImg != null) {
+                    g2d.drawImage(currentPlayerImg, playerX, playerY, 64, 64, this);
+                }
+            }
+        };
+        animPanel.setBounds(0, 0, 1300, 500);
+        animPanel.setOpaque(false);
+        layeredPane.add(animPanel, JLayeredPane.DEFAULT_LAYER);
+
+        // ✨ IMPLEMENTASI TOMBOL SKIP
+        btnSkip = new PixelButton("SKIP >>");
+        btnSkip.setBounds(1100, 20, 150, 40); // Sudut kanan atas
+        btnSkip.addActionListener(e -> {
+            typewriterTimer.stop();
+            animationTimer.stop();
+            mainFrame.showScreen("GAME");
+        });
+        layeredPane.add(btnSkip, JLayeredPane.PALETTE_LAYER);
+
+        btnOpenDoor = new PixelButton("KLIK UNTUK BUKA PINTU");
+        btnOpenDoor.setBounds(500, 350, 300, 60); 
+        btnOpenDoor.setVisible(false); 
+        btnOpenDoor.addActionListener(e -> {
+            com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+            mainFrame.showScreen("GAME");
+        });
+        layeredPane.add(btnOpenDoor, JLayeredPane.PALETTE_LAYER);
+
         textArea = new JTextArea();
         textArea.setBackground(Color.BLACK);
         textArea.setForeground(Color.WHITE);
-        textArea.setFont(new Font("Consolas", Font.PLAIN, 32));
+        textArea.setFont(new Font("Consolas", Font.PLAIN, 24));
         textArea.setLineWrap(true);
         textArea.setWrapStyleWord(true);
         textArea.setEditable(false);
-        textArea.setFocusable(false);
-        textArea.setMargin(new Insets(150, 150, 150, 150)); 
-        add(textArea, BorderLayout.CENTER);
+        textArea.setMargin(new Insets(20, 150, 20, 150));
+        
+        JPanel textPanel = new JPanel(new BorderLayout());
+        textPanel.setBackground(Color.BLACK);
+        textPanel.add(textArea, BorderLayout.CENTER);
+        textPanel.setPreferredSize(new Dimension(1300, 400));
+        add(textPanel, BorderLayout.SOUTH);
 
-        hintLabel = new JLabel("Klik untuk melewati...", SwingConstants.CENTER);
-        hintLabel.setForeground(Color.DARK_GRAY);
-        hintLabel.setFont(new Font("Consolas", Font.PLAIN, 18));
-        hintLabel.setBorder(BorderFactory.createEmptyBorder(20, 0, 30, 0));
-        add(hintLabel, BorderLayout.SOUTH);
-
-        // Timer untuk efek ketikan (muncul setiap 50 milidetik)
         typewriterTimer = new Timer(50, e -> processTypewriterEffect());
-        
-        // Listener untuk mendeteksi klik mouse di seluruh layar
-        MouseAdapter clickListener = new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                handleScreenClick();
+        animationTimer = new Timer(30, e -> {
+            updateAnimation();
+            animPanel.repaint();
+        });
+
+        setupInteraction();
+
+        currentBg = bgRoad1;
+        setDialogue("Tahun 2026...\nMereka bilang ini hanya pekerjaan mudah.");
+        animationTimer.start();
+    }
+
+    private void loadAssets() {
+        imgFront = loadSafeImage("/assets/cutscenes/char_1_front.png");
+        imgBack  = loadSafeImage("/assets/cutscenes/char_1_back.png");
+        imgLeft  = loadSafeImage("/assets/cutscenes/char_1_left.png");
+        imgRight = loadSafeImage("/assets/cutscenes/char_1_right.png");
+        bgRoad1  = loadSafeImage("/assets/cutscenes/road_1.png");
+        bgRoad2  = loadSafeImage("/assets/cutscenes/road_2.png");
+        currentPlayerImg = imgRight; 
+    }
+
+    private void updateAnimation() {
+        if (animPhase == 0) {
+            playerX += 2;
+            currentPlayerImg = imgRight;
+            if (playerX == 400 && !dialogueTriggered[0]) {
+                setDialogue("Rumah tua megah yang selalu jadi perbincangan warga...\nKatanya sudah kosong belasan tahun.");
+                dialogueTriggered[0] = true;
             }
-        };
-        
-        // Memasang listener ke komponen agar klik di mana saja terdeteksi
-        addMouseListener(clickListener);
-        textArea.addMouseListener(clickListener);
-        
-        // Mulai animasi
+            if (playerX >= 1150) animPhase = 1;
+        } else if (animPhase == 1) {
+            playerY += 2;
+            currentPlayerImg = imgFront;
+            if (playerY >= 550) {
+                animPhase = 2; currentBg = bgRoad2;
+                playerX = 550; playerY = 550; 
+            }
+        } else if (animPhase == 2) {
+            playerY -= 2;
+            currentPlayerImg = imgBack;
+            if (playerY == 400 && !dialogueTriggered[1]) {
+                setDialogue("Pantas saja tidak ada yang berani mendekat.\nUdaranya terasa... sangat tidak wajar.");
+                dialogueTriggered[1] = true;
+            }
+            if (playerY <= 250) animPhase = 3;
+        } else if (animPhase == 3) {
+            playerX += 2;
+            currentPlayerImg = imgRight;
+            if (playerX >= 1150) animPhase = 4;
+        } else if (animPhase == 4) {
+            playerY -= 2;
+            currentPlayerImg = imgBack;
+            if (playerY == 100 && !dialogueTriggered[2]) {
+                setDialogue("Baiklah. Mari kita selesaikan shift malam ini.");
+                dialogueTriggered[2] = true;
+            }
+            if (playerY <= -50) { 
+                currentPlayerImg = null; 
+                animPhase = 5;
+                animationTimer.stop();
+                btnOpenDoor.setVisible(true); 
+                btnSkip.setVisible(false); // Sembunyikan tombol skip saat tombol pintu muncul
+            }
+        }
+    }
+    
+    private Image loadSafeImage(String path) {
+        URL url = getClass().getResource(path);
+        if (url != null) return new ImageIcon(url).getImage();
+        return null;
+    }
+    
+    private void setDialogue(String text) {
+        fullText = text;
+        textArea.setText("");
+        charIndex = 0;
+        isTextFinished = false;
         typewriterTimer.start();
     }
 
     private void processTypewriterEffect() {
         if (charIndex < fullText.length()) {
             textArea.append(String.valueOf(fullText.charAt(charIndex)));
-            
-            // Opsional: Anda bisa memutar SFX ketikan kecil di sini
-            // com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/typewriter_tick.wav");
-            
             charIndex++;
         } else {
             typewriterTimer.stop();
-            isFinished = true;
-            hintLabel.setText("Klik untuk memulai shift...");
-            hintLabel.setForeground(Color.WHITE); // Terangkan teks saat selesai
+            isTextFinished = true;
         }
     }
 
-    private void handleScreenClick() {
-        if (!isFinished) {
-            // Klik pertama: Skip animasi, tampilkan seluruh teks secara instan
-            typewriterTimer.stop();
-            textArea.setText(fullText);
-            isFinished = true;
-            hintLabel.setText("Klik untuk memulai shift...");
-            hintLabel.setForeground(Color.WHITE);
-        } else {
-            // ✨ REFACTOR 4: Klik kedua memerintahkan MainFrame pindah ke layar GAME
-            // Hapus dispose() dan instansiasi JFrame baru karena MainFrame yang bertugas memindah kartu
-            mainFrame.showScreen("GAME");
-        }
+    private void setupInteraction() {
+        MouseAdapter clickListener = new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (!isTextFinished) {
+                    typewriterTimer.stop();
+                    textArea.setText(fullText);
+                    isTextFinished = true;
+                }
+            }
+        };
+        addMouseListener(clickListener);
+        textArea.addMouseListener(clickListener);
     }
 }

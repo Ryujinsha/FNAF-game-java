@@ -1,59 +1,72 @@
 package com.ryujinsha.engine;
 
 import com.ryujinsha.entity.*;
-import com.ryujinsha.system.ImageLoader;
 import com.ryujinsha.system.TimeSystem;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.net.URL;
 
-public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
-    private MainFrame mainFrame; // ✨ REFACTOR 2: Referensi ke window utama
+public class GameGUI extends JPanel { 
+    private MainFrame mainFrame; 
 
     // --- 1. DATA LOGIC GAME ---
     private Player player;
     private EnemyOdd enemyA;
     private EnemyEven enemyB;
     private EnemyRandom enemyC;
-    private TimeSystem timeSystem;
     private boolean areEnemiesActive = false;
     private int tickCounter = 0;
     private boolean isGameOver = false;
-    private int jokeClickCount = 0;
-
-    // --- 2. KOMPONEN UI UTAMA ---
+    
     private JLabel statusLabel;
-    private JButton btnTablet, btnLeftDoor, btnRightDoor, btnLeftLight, btnRightLight;
+    
+    private PixelButton btnTablet, btnLeftDoor, btnRightDoor, btnLookLeft, btnLookRight;
     private JLayeredPane layeredPane; 
     
-    // --- 3. KOMPONEN VISUAL & OVERLAY ---
     private JPanel officePanel;
     private JPanel tabletOverlayPanel;
-    private JLabel cameraFeedLabel; 
-    private int currentCameraView = 7; 
+    
+    // --- 2. SISTEM PERBAIKAN & KEYPAD ---
+    private JProgressBar repairProgressBar;
+    private JButton btnStartRepair;
+    private int repairProgress = 0;
+    private boolean isRepairing = false;
+    private Timer repairTimer;
+    private boolean isKeypadActive = false; 
+    
+    private JPanel keypadPopupPanel;
+    private JLabel keypadDisplayLabel;
+    private String secretPin = "";
+    private String currentPinInput = "";
+    
+    // ✨ SISTEM SECOND CHANCE & EASTER EGG PIN
+    private boolean hasSecondChance = true;
+    private boolean pinRevealed = false;
+    private Rectangle hiddenPinFront;
+    private Rectangle hiddenPinBack;
+    
     private JPanel endScreenPanel;
     private JLabel endTitleLabel;
     private JLabel endMessageLabel;
 
-    // ✨ GAMBAR HANTU DI PINTU
     private Image leftDoorVisual = null;
     private Image rightDoorVisual = null;
 
-    // --- 4. TIMER PENGGERAK ---
     private Timer gameLoopTimer; 
     private Timer quoteTimer;
+    
+    private boolean isLookingBack = false;
 
-    // ✨ REFACTOR 3: Konstruktor menerima MainFrame
     public GameGUI(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
         initGameData();
 
-        // setSize, setTitle, setDefaultCloseOperation dihapus karena diurus oleh MainFrame
         setLayout(new BorderLayout());
-
         layeredPane = new JLayeredPane();
         add(layeredPane, BorderLayout.CENTER);
 
@@ -67,11 +80,31 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
         this.enemyA = new EnemyOdd("Epstein", 20);  
         this.enemyB = new EnemyEven("Diddy", 20);   
         this.enemyC = new EnemyRandom("Wowo", 15);  
-        this.timeSystem = new TimeSystem();
         this.areEnemiesActive = false;
         this.tickCounter = 0;
         this.isGameOver = false;
-        this.jokeClickCount = 0; 
+        this.repairProgress = 0;
+        this.isRepairing = false;
+        this.isLookingBack = false;
+        this.isKeypadActive = false; 
+        
+        this.secretPin = String.format("%04d", (int)(Math.random() * 10000));
+        this.currentPinInput = "";
+        
+        // ✨ RESET SECOND CHANCE & GENERATE POSISI PIN RAHASIA ACAK
+        this.hasSecondChance = true;
+        this.pinRevealed = false;
+        
+        // Acak posisi di area dinding (1300x900 base resolution)
+        int rx1 = (int)(Math.random() * 1000) + 150;
+        int ry1 = (int)(Math.random() * 600) + 100;
+        hiddenPinFront = new Rectangle(rx1, ry1, 80, 80);
+
+        int rx2 = (int)(Math.random() * 1000) + 150;
+        int ry2 = (int)(Math.random() * 600) + 100;
+        hiddenPinBack = new Rectangle(rx2, ry2, 80, 80);
+        
+        System.out.println("🤫 [CHEAT LOG] PIN: " + secretPin + " | Posisi Depan: " + rx1 + "," + ry1 + " | Posisi Belakang: " + rx2 + "," + ry2);
     }
 
     private void setupUI() {
@@ -79,18 +112,15 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
         topPanel.setBackground(Color.DARK_GRAY);
         statusLabel = new JLabel("Menyiapkan sistem...");
         statusLabel.setForeground(Color.WHITE);
-        statusLabel.setFont(new Font("Consolas", Font.BOLD, 16));
+        statusLabel.setFont(new Font("Consolas", Font.BOLD, 18)); 
         topPanel.add(statusLabel);
         add(topPanel, BorderLayout.NORTH);
 
         officePanel = new JPanel() {
-            private Image bgBawah; 
-            private Image bgAtas;  
-            private Image doorLeftImg;  
-            private Image doorRightImg; 
+            private Image bgBawah, bgAtas, doorLeftImg, doorRightImg, bgBack; 
 
             {
-                URL urlBawah = getClass().getResource("/assets/office_bg.jpg");
+                URL urlBawah = getClass().getResource("/assets/office_bg.png");
                 if (urlBawah != null) bgBawah = new ImageIcon(urlBawah).getImage();
 
                 URL urlAtas = getClass().getResource("/assets/office_front.png");
@@ -101,47 +131,43 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
 
                 URL urlDoorR = getClass().getResource("/assets/door_right.png");
                 if (urlDoorR != null) doorRightImg = new ImageIcon(urlDoorR).getImage();
+                
+                URL urlBack = getClass().getResource("/assets/back_side.png");
+                if (urlBack != null) bgBack = new ImageIcon(urlBack).getImage();
             }
 
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
 
-                if (bgBawah != null) {
-                    g.drawImage(bgBawah, 0, 0, getWidth(), getHeight(), this);
-                } else {
-                    g.setColor(Color.BLACK);
-                    g.fillRect(0, 0, getWidth(), getHeight());
+                if (isLookingBack) {
+                    if (bgBack != null) g.drawImage(bgBack, 0, 0, getWidth(), getHeight(), this);
+                    else { g.setColor(Color.BLACK); g.fillRect(0, 0, getWidth(), getHeight()); }
+                    return; 
                 }
+
+                if (bgBawah != null) g.drawImage(bgBawah, 0, 0, getWidth(), getHeight(), this);
+                else { g.setColor(Color.BLACK); g.fillRect(0, 0, getWidth(), getHeight()); }
 
                 int doorW = getWidth() / 4; 
                 int doorH = (int)(getHeight() * 0.7); 
                 int doorY = getHeight() - doorH - 20;
 
-                if (leftDoorVisual != null && !player.isLeftDoorClosed()) {
-                    int leftX = getWidth() / 10; 
-                    g.drawImage(leftDoorVisual, leftX, doorY, doorW, doorH, this);
-                }
-
-                if (rightDoorVisual != null && !player.isRightDoorClosed()) {
-                    int rightX = getWidth() - doorW - (getWidth() / 10);
-                    g.drawImage(rightDoorVisual, rightX, doorY, doorW, doorH, this);
-                }
-
-                if (bgAtas != null) {
-                    g.drawImage(bgAtas, 0, 0, getWidth(), getHeight(), this);
-                }
-
-                if (player.isLeftDoorClosed() && doorLeftImg != null) {
-                    g.drawImage(doorLeftImg, 0, 0, getWidth(), getHeight(), this);
-                }
-
-                if (player.isRightDoorClosed() && doorRightImg != null) {
-                    g.drawImage(doorRightImg, 0, 0, getWidth(), getHeight(), this);
-                }
+                if (leftDoorVisual != null && !player.isLeftDoorClosed()) g.drawImage(leftDoorVisual, getWidth() / 10, doorY, doorW, doorH, this);
+                if (rightDoorVisual != null && !player.isRightDoorClosed()) g.drawImage(rightDoorVisual, getWidth() - doorW - (getWidth() / 10), doorY, doorW, doorH, this);
+                if (bgAtas != null) g.drawImage(bgAtas, 0, 0, getWidth(), getHeight(), this);
+                if (player.isLeftDoorClosed() && doorLeftImg != null) g.drawImage(doorLeftImg, 0, 0, getWidth(), getHeight(), this);
+                if (player.isRightDoorClosed() && doorRightImg != null) g.drawImage(doorRightImg, 0, 0, getWidth(), getHeight(), this);
             }
         };
         layeredPane.add(officePanel, JLayeredPane.DEFAULT_LAYER);
+
+        // Menggabungkan deteksi klik keypad dan klik easter egg
+        setupInteractionHits();
+        
+        setupKeypadPopupUI();
+        layeredPane.add(keypadPopupPanel, JLayeredPane.MODAL_LAYER);
+        keypadPopupPanel.setVisible(false);
 
         setupTabletOverlay();
         layeredPane.add(tabletOverlayPanel, JLayeredPane.PALETTE_LAYER);
@@ -151,27 +177,160 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
         layeredPane.add(endScreenPanel, JLayeredPane.POPUP_LAYER);
         endScreenPanel.setVisible(false);
 
-        setupBottomControls();
+        setupFloatingControls();
+    }
+
+    private void setupKeypadPopupUI() {
+        keypadPopupPanel = new JPanel();
+        keypadPopupPanel.setBackground(new Color(20, 20, 20, 240));
+        keypadPopupPanel.setBorder(BorderFactory.createLineBorder(Color.DARK_GRAY, 5));
+        keypadPopupPanel.setLayout(new BorderLayout(10, 10));
+
+        keypadDisplayLabel = new JLabel("----", SwingConstants.CENTER);
+        keypadDisplayLabel.setFont(new Font("Consolas", Font.BOLD, 48));
+        keypadDisplayLabel.setForeground(new Color(150, 200, 255)); 
+        keypadDisplayLabel.setBackground(new Color(10, 30, 50));
+        keypadDisplayLabel.setOpaque(true);
+        keypadDisplayLabel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
+        keypadPopupPanel.add(keypadDisplayLabel, BorderLayout.NORTH);
+
+        JPanel gridPanel = new JPanel(new GridLayout(4, 3, 5, 5));
+        gridPanel.setOpaque(false);
+        String[] buttons = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "ENT"};
+        
+        for (String text : buttons) {
+            JButton btn = new JButton(text);
+            btn.setFont(new Font("Consolas", Font.BOLD, 24));
+            btn.setBackground(Color.DARK_GRAY);
+            btn.setForeground(Color.WHITE);
+            btn.setFocusPainted(false);
+            btn.addActionListener(e -> handleKeypadInput(text));
+            gridPanel.add(btn);
+        }
+        keypadPopupPanel.add(gridPanel, BorderLayout.CENTER);
+
+        JButton btnCloseKeypad = new JButton("TUTUP KEYPAD");
+        btnCloseKeypad.setBackground(Color.RED);
+        btnCloseKeypad.setForeground(Color.WHITE);
+        btnCloseKeypad.addActionListener(e -> keypadPopupPanel.setVisible(false));
+        keypadPopupPanel.add(btnCloseKeypad, BorderLayout.SOUTH);
+    }
+
+    private void handleKeypadInput(String key) {
+        if (isGameOver) return;
+
+        if (key.equals("CLR")) {
+            currentPinInput = "";
+            keypadDisplayLabel.setText("----");
+            keypadDisplayLabel.setForeground(new Color(150, 200, 255));
+            return;
+        }
+
+        if (key.equals("ENT")) {
+            if (currentPinInput.equals(secretPin)) {
+                keypadDisplayLabel.setText("ACCESS GRANTED");
+                keypadDisplayLabel.setForeground(Color.GREEN);
+                endGame("VICTORY", "Pintu terbuka! Kamu berhasil kabur.", Color.GREEN);
+            } else {
+                keypadDisplayLabel.setText("DENIED");
+                keypadDisplayLabel.setForeground(Color.RED);
+                
+                // Kurangi power
+                player.getPower().decreasePower(15); 
+                updateStatusLabel();
+                
+                // ✨ LOGIKA SECOND CHANCE
+                if (player.getPower().getCurrentPower() <= 0) {
+                    if (hasSecondChance) {
+                        hasSecondChance = false;
+                        player.getPower().addPower(30); // Berikan 30% daya darurat
+                        
+                        logEvent("⚠️ [EMERGENCY] Daya habis! Generator darurat menyala (+30% Power).");
+                        JOptionPane.showMessageDialog(this, "Sistem Anjlok!\nGenerator cadangan menyala memberi 30% daya.\nKamu harus melakukan START REPAIR ulang!", "WARNING", JOptionPane.WARNING_MESSAGE);
+                        
+                        // Reset status perbaikan
+                        keypadPopupPanel.setVisible(false);
+                        isKeypadActive = false;
+                        repairProgress = 0;
+                        repairProgressBar.setValue(0);
+                        btnStartRepair.setText("START REPAIR");
+                        btnStartRepair.setEnabled(true);
+                        btnStartRepair.setForeground(Color.GREEN);
+                        updateStatusLabel();
+                    } else {
+                        checkWinLoss(); // Jika kesempatan kedua sudah dipakai, mati.
+                    }
+                } else {
+                    logEvent("❌ [KEYPAD] PIN SALAH! Sistem menyedot sisa daya... Power -15%");
+                }
+                
+                Timer resetTimer = new Timer(1000, evt -> {
+                    if (!isGameOver) {
+                        currentPinInput = "";
+                        keypadDisplayLabel.setText("----");
+                        keypadDisplayLabel.setForeground(new Color(150, 200, 255));
+                    }
+                });
+                resetTimer.setRepeats(false);
+                resetTimer.start();
+            }
+            return;
+        }
+
+        if (currentPinInput.length() < 4 && !keypadDisplayLabel.getText().equals("DENIED")) {
+            currentPinInput += key;
+            com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/button_click.wav"); 
+            
+            StringBuilder display = new StringBuilder(currentPinInput);
+            while (display.length() < 4) display.append("-");
+            keypadDisplayLabel.setText(display.toString());
+        }
+    }
+
+    // ✨ METHOD BARU: Menangani klik Keypad (Diperbesar) & Klik Area Rahasia
+    private void setupInteractionHits() {
+        layeredPane.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (isGameOver) return;
+
+                int w = layeredPane.getWidth();
+                int h = layeredPane.getHeight();
+                int finalX = (e.getX() * 1300) / w; 
+                int finalY = (e.getY() * 900) / h; 
+
+                // 1. Cek Hitbox Rahasia PIN
+                if (!pinRevealed && !player.isTabletOpen()) {
+                    boolean foundFront = !isLookingBack && hiddenPinFront.contains(finalX, finalY);
+                    boolean foundBack = isLookingBack && hiddenPinBack.contains(finalX, finalY);
+                    
+                    if (foundFront || foundBack) {
+                        pinRevealed = true;
+                        logEvent("🔍 [DISCOVERY] Kamu menemukan coretan tersembunyi! PIN: " + secretPin);
+                        com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/light_switch.wav"); // Sfx penemuan
+                        JOptionPane.showMessageDialog(layeredPane, "Kamu melihat goresan di dinding...\nAngkanya terlihat seperti: " + secretPin, "Secret Note Found", JOptionPane.INFORMATION_MESSAGE);
+                    }
+                }
+
+                // 2. Cek Hitbox Keypad (Hitbox diperbesar menjadi 200x250)
+                if (isLookingBack && isKeypadActive && !keypadPopupPanel.isVisible()) {
+                    Rectangle keypadArea = new Rectangle(750, 300, 200, 250); 
+                    
+                    if (keypadArea.contains(finalX, finalY)) {
+                        logEvent("🔍 [INTERACT] Membuka antarmuka Keypad...");
+                        keypadPopupPanel.setVisible(true);
+                    }
+                }
+            }
+        });
     }
 
     private void updateDoorVisuals() {
         Enemy leftEnemy = getEnemyAtDoor("LEFT");
-        if (leftEnemy != null) {
-            String path = player.isLeftLightOn() ? getSpritePath(leftEnemy) : "/assets/enemies/silhouette.png";
-            URL url = getClass().getResource(path);
-            leftDoorVisual = (url != null) ? new ImageIcon(url).getImage() : null;
-        } else {
-            leftDoorVisual = null;
-        }
+        leftDoorVisual = (leftEnemy != null) ? new ImageIcon(getClass().getResource(getSpritePath(leftEnemy))).getImage() : null;
 
         Enemy rightEnemy = getEnemyAtDoor("RIGHT");
-        if (rightEnemy != null) {
-            String path = player.isRightLightOn() ? getSpritePath(rightEnemy) : "/assets/enemies/silhouette.png";
-            URL url = getClass().getResource(path);
-            rightDoorVisual = (url != null) ? new ImageIcon(url).getImage() : null;
-        } else {
-            rightDoorVisual = null;
-        }
+        rightDoorVisual = (rightEnemy != null) ? new ImageIcon(getClass().getResource(getSpritePath(rightEnemy))).getImage() : null;
 
         officePanel.repaint();
     }
@@ -191,57 +350,66 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
                 int h = layeredPane.getHeight();
                 officePanel.setBounds(0, 0, w, h);
                 endScreenPanel.setBounds(0, 0, w, h);
+                
                 int tabW = 924;
                 int tabH = 550;
                 tabletOverlayPanel.setBounds((w - tabW) / 2, (h - tabH) / 2, tabW, tabH);
+                
+                int keyW = 350;
+                int keyH = 500;
+                keypadPopupPanel.setBounds((w - keyW) / 2, (h - keyH) / 2, keyW, keyH);
+
+                int btnW = 250, btnH = 60, gap = 30;
+                int startX = (w - (3 * btnW + 2 * gap)) / 2; 
+                int posY = h - btnH - 30; 
+
+                btnLeftDoor.setBounds(startX, posY, btnW, btnH);
+                btnTablet.setBounds(startX + btnW + gap, posY, btnW, btnH);
+                btnRightDoor.setBounds(startX + 2 * (btnW + gap), posY, btnW, btnH);
+
+                int edgeBtnW = 50, edgeBtnH = 150, midY = (h - edgeBtnH) / 2;
+                btnLookLeft.setBounds(10, midY, edgeBtnW, edgeBtnH);
+                btnLookRight.setBounds(w - 60, midY, edgeBtnW, edgeBtnH);
             }
         });
     }
 
     private void setupTabletOverlay() {
         tabletOverlayPanel = new JPanel();
-        tabletOverlayPanel.setBackground(new Color(0, 0, 0, 200)); 
-        tabletOverlayPanel.setLayout(new BorderLayout());
-        tabletOverlayPanel.setBorder(BorderFactory.createLineBorder(Color.GREEN, 2));
-        cameraFeedLabel = new JLabel();
-        cameraFeedLabel.setHorizontalAlignment(JLabel.CENTER);
-        updateCameraFeed(currentCameraView); 
-        tabletOverlayPanel.add(cameraFeedLabel, BorderLayout.CENTER);
-        JPanel mapPanel = new JPanel();
-        mapPanel.setPreferredSize(new Dimension(250, 550));
-        mapPanel.setBackground(Color.BLACK);
-        mapPanel.setLayout(new GridLayout(4, 2, 5, 5)); 
-        for (int i = 1; i <= 7; i++) {
-            int camId = i;
-            JButton btnCam = new JButton("CAM " + i);
-            btnCam.setBackground(Color.DARK_GRAY);
-            btnCam.setForeground(Color.GREEN);
-            btnCam.addActionListener(e -> {
-                currentCameraView = camId;
-                updateCameraFeed(currentCameraView);
-            });
-            mapPanel.add(btnCam);
-        }
-        JButton btnJoke = new JButton("DO NOT PUSH"); 
-        btnJoke.setBackground(Color.DARK_GRAY);
-        btnJoke.setForeground(Color.YELLOW); 
-        btnJoke.setFocusPainted(false);
-        btnJoke.addActionListener(e -> {
-            if (isGameOver) return; 
+        tabletOverlayPanel.setBackground(new Color(10, 20, 10, 230)); 
+        tabletOverlayPanel.setLayout(new GridBagLayout());
+        tabletOverlayPanel.setBorder(BorderFactory.createLineBorder(Color.GREEN, 3));
 
-            jokeClickCount++; 
-            
-            if (jokeClickCount > 3) {
-                logEvent("🤡 [FATAL ERROR] Seseorang tidak suka kau bermain-main...");
-                triggerJumpscare(enemyC); 
-            } else {
-                logEvent("🤡 [SYSTEM] Memutar audio rahasia... (" + jokeClickCount + "/3)");
-                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/joke_sound.wav");
-            }
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(20, 20, 20, 20);
+        gbc.gridwidth = GridBagConstraints.REMAINDER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        JLabel titleLabel = new JLabel("SYSTEM DIAGNOSTIC & REPAIR", SwingConstants.CENTER);
+        titleLabel.setFont(new Font("Consolas", Font.BOLD, 36));
+        titleLabel.setForeground(Color.GREEN);
+        tabletOverlayPanel.add(titleLabel, gbc);
+
+        repairProgressBar = new JProgressBar(0, 100);
+        repairProgressBar.setValue(0);
+        repairProgressBar.setStringPainted(true);
+        repairProgressBar.setFont(new Font("Consolas", Font.BOLD, 24));
+        repairProgressBar.setForeground(Color.GREEN);
+        repairProgressBar.setBackground(Color.DARK_GRAY);
+        repairProgressBar.setPreferredSize(new Dimension(600, 50));
+        tabletOverlayPanel.add(repairProgressBar, gbc);
+
+        btnStartRepair = new JButton("START REPAIR");
+        btnStartRepair.setFont(new Font("Consolas", Font.BOLD, 28));
+        btnStartRepair.setBackground(Color.DARK_GRAY);
+        btnStartRepair.setForeground(Color.GREEN);
+        btnStartRepair.setFocusPainted(false);
+        btnStartRepair.addActionListener(e -> {
+            if (isGameOver || repairProgress >= 100) return;
+            isRepairing = !isRepairing; 
+            btnStartRepair.setText(isRepairing ? "PAUSE REPAIR" : "RESUME REPAIR");
         });
-        mapPanel.add(btnJoke);
-        mapPanel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createLineBorder(Color.GREEN), "MAP", 0, 0, null, Color.GREEN));
-        tabletOverlayPanel.add(mapPanel, BorderLayout.EAST);
+        tabletOverlayPanel.add(btnStartRepair, gbc);
     }
 
     private void setupEndScreen() {
@@ -251,74 +419,81 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridwidth = GridBagConstraints.REMAINDER;
         gbc.insets = new Insets(10, 0, 20, 0); 
+        
         endTitleLabel = new JLabel("GAME OVER", SwingConstants.CENTER);
         endTitleLabel.setFont(new Font("Consolas", Font.BOLD, 60));
         endScreenPanel.add(endTitleLabel, gbc);
+        
         endMessageLabel = new JLabel("Message", SwingConstants.CENTER);
         endMessageLabel.setFont(new Font("Consolas", Font.PLAIN, 20));
         endMessageLabel.setForeground(Color.WHITE);
         endScreenPanel.add(endMessageLabel, gbc);
+        
         JPanel btnPanel = new JPanel();
         btnPanel.setOpaque(false);
+        
         JButton btnRetry = new JButton("RETRY SHIFT");
         btnRetry.setFont(new Font("Consolas", Font.BOLD, 20));
         btnRetry.setBackground(Color.DARK_GRAY);
         btnRetry.setForeground(Color.GREEN);
         btnRetry.addActionListener(e -> resetGame());
-        JButton btnQuit = new JButton("QUIT GAME");
-        btnQuit.setFont(new Font("Consolas", Font.BOLD, 20));
-        btnQuit.setBackground(Color.DARK_GRAY);
-        btnQuit.setForeground(Color.RED);
-        btnQuit.addActionListener(e -> System.exit(0));
         
         JButton btnMenu = new JButton("MAIN MENU");
         btnMenu.setFont(new Font("Consolas", Font.BOLD, 20));
         btnMenu.setBackground(Color.DARK_GRAY);
         btnMenu.setForeground(Color.WHITE);
         btnMenu.addActionListener(e -> {
-            if (quoteTimer != null && quoteTimer.isRunning()) {
-                quoteTimer.stop();
-            }
+            if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
             com.ryujinsha.system.AudioManager.stopAllSounds();
-            
-            // ✨ REFACTOR 4: Memanggil MainFrame untuk transisi ke Menu Utama
             mainFrame.showScreen("MENU");
         });
 
-        btnPanel.removeAll(); 
         btnPanel.add(btnRetry);
         btnPanel.add(btnMenu); 
-        
         endScreenPanel.add(btnPanel, gbc); 
     }
 
-    private void setupBottomControls() {
-        JPanel bottomPanel = new JPanel();
-        bottomPanel.setBackground(Color.DARK_GRAY);
-        bottomPanel.setLayout(new GridLayout(1, 5, 5, 0)); 
+    private void setupFloatingControls() {
+        btnLeftDoor = new PixelButton("🚪 L-Door [OPEN]");
+        btnTablet = new PixelButton("📱 Tablet [OFF]");
+        btnRightDoor = new PixelButton("🚪 R-Door [OPEN]");
         
-        btnLeftLight = new JButton("💡 L-Light [OFF]");
-        btnLeftDoor = new JButton("🚪 L-Door [OPEN]");
-        btnTablet = new JButton("📱 Tablet [OFF]");
-        btnRightDoor = new JButton("🚪 R-Door [OPEN]");
-        btnRightLight = new JButton("💡 R-Light [OFF]");
+        btnLookLeft = new PixelButton("◀");
+        btnLookRight = new PixelButton("▶");
 
-        bottomPanel.add(btnLeftLight);
-        bottomPanel.add(btnLeftDoor);
-        bottomPanel.add(btnTablet);
-        bottomPanel.add(btnRightDoor);
-        bottomPanel.add(btnRightLight);
-        add(bottomPanel, BorderLayout.SOUTH);
+        layeredPane.add(btnLeftDoor, JLayeredPane.MODAL_LAYER);
+        layeredPane.add(btnTablet, JLayeredPane.MODAL_LAYER);
+        layeredPane.add(btnRightDoor, JLayeredPane.MODAL_LAYER);
+        layeredPane.add(btnLookLeft, JLayeredPane.MODAL_LAYER);
+        layeredPane.add(btnLookRight, JLayeredPane.MODAL_LAYER);
+
+        java.awt.event.ActionListener lookAction = e -> {
+            if (isGameOver || player.isTabletOpen() || keypadPopupPanel.isVisible()) return;
+            isLookingBack = !isLookingBack;
+            officePanel.repaint();
+        };
+        btnLookLeft.addActionListener(lookAction);
+        btnLookRight.addActionListener(lookAction);
 
         btnTablet.addActionListener(e -> {
-            if (isGameOver) return;
+            if (isGameOver || keypadPopupPanel.isVisible()) return;
+            
+            if (isLookingBack) {
+                isLookingBack = false;
+                officePanel.repaint();
+            }
+            
             player.toggleTablet();
-            btnTablet.setText("📱 Tablet [" + (player.isTabletOpen() ? "ON" : "OFF") + "]");
-            tabletOverlayPanel.setVisible(player.isTabletOpen());
-            if(player.isTabletOpen()) updateCameraFeed(currentCameraView);
-            if (player.isTabletOpen() && !areEnemiesActive) {
+            boolean isTabOpen = player.isTabletOpen();
+            btnTablet.setText("📱 Tablet [" + (isTabOpen ? "ON" : "OFF") + "]");
+            tabletOverlayPanel.setVisible(isTabOpen);
+            
+            btnLookLeft.setVisible(!isTabOpen);
+            btnLookRight.setVisible(!isTabOpen);
+
+            if (isTabOpen && !areEnemiesActive) {
                 areEnemiesActive = true;
-                logEvent("⚠️ [WARNING] Sistem menyala. Sesuatu menyadari kehadiranmu...");
+                logEvent("⚠️ [WARNING] Sesuatu menyadari kehadiranmu...");
             }
         });
 
@@ -326,12 +501,7 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
             if (isGameOver) return;
             player.toggleLeftDoor();
             btnLeftDoor.setText("🚪 L-Door [" + (player.isLeftDoorClosed() ? "CLOSED" : "OPEN") + "]");
-            
-            if (player.isLeftDoorClosed()) {
-                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_close.wav");
-            } else {
-                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_open.wav");
-            }
+            com.ryujinsha.system.AudioManager.playSound(player.isLeftDoorClosed() ? "/assets/audio/sfx/door_close.wav" : "/assets/audio/sfx/door_open.wav");
             updateDoorVisuals(); 
         });
 
@@ -339,65 +509,37 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
             if (isGameOver) return;
             player.toggleRightDoor();
             btnRightDoor.setText("🚪 R-Door [" + (player.isRightDoorClosed() ? "CLOSED" : "OPEN") + "]");
-            
-            if (player.isRightDoorClosed()) {
-                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_close.wav");
-            } else {
-                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_open.wav");
-            }
+            com.ryujinsha.system.AudioManager.playSound(player.isRightDoorClosed() ? "/assets/audio/sfx/door_close.wav" : "/assets/audio/sfx/door_open.wav");
             updateDoorVisuals(); 
         });
-
-        btnLeftLight.addActionListener(e -> {
-            if (isGameOver) return;
-            player.toggleLeftLight();
-            btnLeftLight.setText("💡 L-Light [" + (player.isLeftLightOn() ? "ON" : "OFF") + "]");
-            com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/light_switch.wav");
-            checkVisibility("LEFT"); 
-            updateDoorVisuals(); 
-        });
-    }
-
-    private void updateCameraFeed(int camId) {
-        String path = "/assets/rooms/room_" + camId + ".png";
-        ImageIcon feedIcon = ImageLoader.loadScaledIcon(path, 674, 550); 
-        if (feedIcon != null) {
-            cameraFeedLabel.setIcon(feedIcon);
-            cameraFeedLabel.setText(""); 
-        } else {
-            cameraFeedLabel.setIcon(null);
-            cameraFeedLabel.setText("VIDEO LOSS - CAM " + camId);
-            cameraFeedLabel.setForeground(Color.RED);
-        }
     }
 
     private void setupGameLoop() {
         gameLoopTimer = new Timer(2000, e -> processGameTick());
+        
+        repairTimer = new Timer(100, e -> {
+            if (isGameOver) return;
+            
+            if (player.isTabletOpen() && isRepairing && repairProgress < 100) {
+                repairProgress++; 
+                repairProgressBar.setValue(repairProgress);
+                
+                if (repairProgress >= 100) {
+                    isRepairing = false;
+                    btnStartRepair.setText("SYSTEM REPAIRED");
+                    btnStartRepair.setEnabled(false);
+                    btnStartRepair.setForeground(Color.GRAY);
+                    
+                    isKeypadActive = true; 
+                    logEvent("✅ [SYSTEM] Perbaikan selesai. KEYPAD BELAKANG AKTIF!");
+                }
+            }
+        });
     }
 
     private void processGameTick() {
         if (isGameOver) return;
 
-        tickCounter++;
-        if (tickCounter >= 10) {
-            timeSystem.advanceTime();
-            tickCounter = 0;
-            logEvent("🔔 TENG TONG... Jam menunjukkan pukul " + timeSystem.getFormattedTime());
-        }
-        
-        player.applyStress();
-
-        boolean isIdle = !player.isTabletOpen() && 
-                         !player.isLeftDoorClosed() && 
-                         !player.isRightDoorClosed() && 
-                         !player.isLeftLightOn() && 
-                         !player.isRightLightOn();
-                         
-        if (isIdle) {
-            player.getSanity().recoverSanity(1);
-            logEvent("🧘‍♂️ [RELAX] Bernapas dalam gelap... Sanity +1%");
-        }
-        
         if (areEnemiesActive) {
             enemyA.act(); enemyB.act(); enemyC.act();
             checkDoorDefense(enemyA); 
@@ -412,13 +554,15 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
 
     private void checkDoorDefense(Enemy enemy) {
         if (enemy.isAtDoor()) {
+            // ✨ FIX: Mengembalikan peringatan napas agar Anda tidak mati tanpa aba-aba
             if (enemy.getPatienceTimer() == 3) {
-                if (enemy.getDoorTarget().equals("LEFT") && !player.isLeftLightOn()) {
-                    logEvent("🌑 [DARK] *suara napas berat*... Ada siluet di pintu KIRI.");
-                } else if (enemy.getDoorTarget().equals("RIGHT") && !player.isRightLightOn()) {
-                    logEvent("🌑 [DARK] *suara napas berat*... Ada siluet di pintu KANAN.");
+                if (enemy.getDoorTarget().equals("LEFT")) {
+                    logEvent("🌑 *suara napas berat*... Ada siluet di pintu KIRI.");
+                } else if (enemy.getDoorTarget().equals("RIGHT")) {
+                    logEvent("🌑 *suara napas berat*... Ada siluet di pintu KANAN.");
                 }
             }
+            
             boolean isDefended = (enemy.getDoorTarget().equals("LEFT") && player.isLeftDoorClosed()) ||
                                  (enemy.getDoorTarget().equals("RIGHT") && player.isRightDoorClosed());
             
@@ -426,8 +570,6 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
                 logEvent("💥 *BAM BAM BAM* " + enemy.getName() + " memukul pintu!");
                 int randomBang = (int)(Math.random() * 3) + 1;
                 com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_bang_" + randomBang + ".wav");
-                
-                player.getSanity().dropSanity(10);
                 enemy.retreat(7);
                 updateDoorVisuals(); 
             } else if (enemy.getPatienceTimer() <= 0) {
@@ -437,57 +579,44 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
     }
 
     private void updateStatusLabel() {
-        statusLabel.setText(String.format("Time: %s | Power: %d%% | Sanity: %d%% | Monitoring: CAM %d", 
-            timeSystem.getFormattedTime(), player.getPower().getCurrentPower(), 
-            player.getSanity().getSanityLevel(), currentCameraView));
+        String systemStatus = repairProgress >= 100 ? "REPAIRED (Keypad Online)" : "DAMAGED (" + repairProgress + "%)";
+        statusLabel.setText(String.format("Power: %d%% | System: %s", player.getPower().getCurrentPower(), systemStatus));
     }
 
     private void checkWinLoss() {
-        if (timeSystem.isMorning()) {
-            endGame("VICTORY", "06:00 AM. Matahari terbit. Kamu selamat malam ini.", Color.GREEN);
-        } else if (player.getSanity().isInsane() || player.getPower().isPowerEmpty()) {
-            // ✨ MODIFIKASI: Panggil Wowo (enemyC) dengan jeda waktu yang menegangkan
+        if (player.getPower().isPowerEmpty()) {
             triggerJumpscare(enemyC, true);
         }
     }
 
-    // Method original untuk menjaga kompatibilitas dengan Pintu dan Easter Egg (tanpa delay)
     private void triggerJumpscare(Enemy enemy) {
         triggerJumpscare(enemy, false);
     }
 
-    // ✨ MODIFIKASI: Method baru yang mendukung delay dan penyembunyian UI
     private void triggerJumpscare(Enemy enemy, boolean withDelay) {
         if (isGameOver) return;
         isGameOver = true;
         gameLoopTimer.stop(); 
         tabletOverlayPanel.setVisible(false);
+        keypadPopupPanel.setVisible(false);
         
-        // 1. Sembunyikan seluruh kontrol pemain untuk menciptakan keputusasaan
         btnTablet.setVisible(false);
         btnLeftDoor.setVisible(false);
         btnRightDoor.setVisible(false);
-        btnLeftLight.setVisible(false);
-        btnRightLight.setVisible(false);
+        btnLookLeft.setVisible(false);
+        btnLookRight.setVisible(false);
 
-        // 2. Hentikan semua suara latar
         com.ryujinsha.system.AudioManager.stopAllSounds();
 
         if (withDelay) {
-            logEvent("🔌 [SYSTEM FAILURE] Sistem mati total. Kegelapan dan keheningan menyelimuti...");
-            // Timer suspense selama 3 detik (3000ms) sebelum Wowo menerkam
-            Timer suspenseTimer = new Timer(3000, e -> {
-                executeJumpscareVisuals(enemy);
-            });
+            Timer suspenseTimer = new Timer(3000, e -> executeJumpscareVisuals(enemy));
             suspenseTimer.setRepeats(false);
             suspenseTimer.start();
         } else {
-            // Langsung eksekusi untuk kasus gagal menahan pintu
             executeJumpscareVisuals(enemy);
         }
     }
 
-    // ✨ METODE BARU: Menangani murni perenderan gambar dan suara jumpscare
     private void executeJumpscareVisuals(Enemy enemy) {
         com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/jumpscare_scream.wav");
         String imagePath = enemy.getJumpscarePath();
@@ -526,6 +655,8 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
     private void endGame(String title, String msg, Color titleColor, Enemy killer) {
         if (!isGameOver) isGameOver = true; 
         gameLoopTimer.stop();
+        keypadPopupPanel.setVisible(false); 
+        
         endTitleLabel.setText(title);
         endTitleLabel.setForeground(titleColor);
         endMessageLabel.setText(msg);
@@ -533,64 +664,59 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
         endScreenPanel.setBounds(0, 0, layeredPane.getWidth(), layeredPane.getHeight());
         endScreenPanel.setVisible(true); 
         
-        // Memaksa Swing menyusun ulang layout tombol agar tidak hilang
         endScreenPanel.revalidate();
         endScreenPanel.repaint();
 
-        layeredPane.revalidate();
-        layeredPane.repaint();
-
         if (killer != null && killer.getQuotePath() != null) {
-            System.out.println("[DEBUG-AUDIO] Menyiapkan Timer Quote untuk path: " + killer.getQuotePath());
-            
-            quoteTimer = new Timer(1500, e -> {
-                System.out.println("[DEBUG-AUDIO] Memutar suara quote SEKARANG!");
-                com.ryujinsha.system.AudioManager.playSound(killer.getQuotePath());
-            });
+            quoteTimer = new Timer(1500, e -> com.ryujinsha.system.AudioManager.playSound(killer.getQuotePath()));
             quoteTimer.setRepeats(false);
             quoteTimer.start();
-        } else {
-            System.out.println("[DEBUG-AUDIO] Gagal memutar quote. Killer: " + killer + " | Path: " + (killer != null ? killer.getQuotePath() : "null"));
         }
     }
 
     private void resetGame() {
-        if (quoteTimer != null && quoteTimer.isRunning()) {
-            quoteTimer.stop();
+        if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
+        
+        if (repairProgressBar != null) repairProgressBar.setValue(0);
+        if (btnStartRepair != null) {
+            btnStartRepair.setText("START REPAIR");
+            btnStartRepair.setEnabled(true);
+            btnStartRepair.setForeground(Color.GREEN);
         }
         com.ryujinsha.system.AudioManager.stopAllSounds();
 
-        logEvent("\n--- REBOOTING SYSTEM ---");
         initGameData();
         endScreenPanel.setVisible(false);
         tabletOverlayPanel.setVisible(false);
+        keypadPopupPanel.setVisible(false);
         leftDoorVisual = null;
         rightDoorVisual = null;
+        
+        btnTablet.setVisible(true);
+        btnLeftDoor.setVisible(true);
+        btnRightDoor.setVisible(true);
+        btnLookLeft.setVisible(true);
+        btnLookRight.setVisible(true);
         
         btnTablet.setText("📱 Tablet [OFF]");
         btnLeftDoor.setText("🚪 L-Door [OPEN]");
         btnRightDoor.setText("🚪 R-Door [OPEN]");
-        btnLeftLight.setText("💡 L-Light [OFF]");
-        btnRightLight.setText("💡 R-Light [OFF]");
+        
+        currentPinInput = "";
+        keypadDisplayLabel.setText("----");
+        keypadDisplayLabel.setForeground(new Color(150, 200, 255));
 
-        currentCameraView = 7;
-        updateCameraFeed(currentCameraView);
         updateDoorVisuals();
         updateStatusLabel();
         
-        logEvent("Sistem online. Malam pertama dimulai ulang.");
         gameLoopTimer.start();
+        if (repairTimer != null) repairTimer.start(); 
     }
 
     public void startGame() {
-        // ✨ REFACTOR 5: setVisible(true) dihapus, karena CardLayout menanganinya
         updateStatusLabel();
-        logEvent("Sistem online. Malam pertama dimulai.");
         gameLoopTimer.start();
-    }
-
-    private void logEvent(String message) {
-        System.out.println(message); 
+        if (repairTimer != null) repairTimer.start(); 
     }
 
     private Enemy getEnemyAtDoor(String doorTarget) {
@@ -600,18 +726,7 @@ public class GameGUI extends JPanel { // ✨ REFACTOR 1: Berubah menjadi JPanel
         return null; 
     }
 
-    private void checkVisibility(String doorTarget) {
-        Enemy enemy = getEnemyAtDoor(doorTarget);
-        boolean isLightOn = doorTarget.equals("LEFT") ? player.isLeftLightOn() : player.isRightLightOn();
-
-        if (enemy != null) {
-            if (isLightOn) {
-                logEvent("🔦 [LIGHT ON] TERLIHAT JELAS! " + enemy.getName() + " menatapmu dari pintu " + doorTarget + "!");
-            } else {
-                logEvent("🌑 [DARK] Ada SILUET gelap berdiri di pintu " + doorTarget + "...");
-            }
-        } else if (isLightOn) {
-            logEvent("🔦 [LIGHT ON] Lorong " + doorTarget + " aman.");
-        }
+    private void logEvent(String message) {
+        System.out.println(message); 
     }
 }

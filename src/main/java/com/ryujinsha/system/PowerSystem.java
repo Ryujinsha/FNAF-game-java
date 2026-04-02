@@ -19,6 +19,25 @@ public class PowerSystem {
         }
     }
 
+    public void decreasePower(int amount) {
+        // Asumsi variabel penyimpan listrik Anda bernama 'currentPower'
+        // Jika namanya berbeda (misal 'powerLevel'), silakan sesuaikan.
+        this.currentPower -= amount;
+        
+        // Memastikan listrik tidak tembus minus di bawah 0
+        if (this.currentPower < 0) {
+            this.currentPower = 0;
+        }
+    }
+
+    // ✨ METHOD BARU: Untuk memberikan listrik cadangan (Second Chance)
+    public void addPower(int amount) {
+        this.currentPower += amount;
+        if (this.currentPower > 100) {
+            this.currentPower = 100;
+        }
+    }
+
     public boolean isPowerEmpty() {
         return currentPower <= 0;
     }
