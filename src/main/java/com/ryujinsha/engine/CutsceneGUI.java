@@ -1,16 +1,22 @@
 package com.ryujinsha.engine;
 
+import com.ryujinsha.system.AssetCache;
+import com.ryujinsha.system.ResourceManaged;
+
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.net.URL;
 
-public class CutsceneGUI extends JPanel {
+public class CutsceneGUI extends JPanel implements ResourceManaged {
     private MainFrame mainFrame;
     private JLayeredPane layeredPane; 
 
     private JTextArea textArea;
+    private JPanel animPanel;
+    private JPanel textPanel;
     private String fullText;
     private int charIndex = 0;
     private Timer typewriterTimer;
@@ -38,7 +44,7 @@ public class CutsceneGUI extends JPanel {
         layeredPane = new JLayeredPane();
         add(layeredPane, BorderLayout.CENTER);
 
-        JPanel animPanel = new JPanel() {
+        animPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -49,13 +55,16 @@ public class CutsceneGUI extends JPanel {
                     g2d.drawImage(currentBg, 0, 0, getWidth(), getHeight(), this);
                 }
                 if (currentPlayerImg != null) {
+                    // Skala posisi player relatif terhadap ukuran panel jika perlu, 
+                    // namun untuk saat ini kita gunakan koordinat absolut untuk kompatibilitas animasi.
                     g2d.drawImage(currentPlayerImg, playerX, playerY, 64, 64, this);
                 }
             }
         };
-        animPanel.setBounds(0, 0, 1300, 500);
         animPanel.setOpaque(false);
         layeredPane.add(animPanel, JLayeredPane.DEFAULT_LAYER);
+
+        setupResponsiveListener();
 
         // ✨ IMPLEMENTASI TOMBOL SKIP
         btnSkip = new PixelButton("SKIP >>");
@@ -85,10 +94,10 @@ public class CutsceneGUI extends JPanel {
         textArea.setEditable(false);
         textArea.setMargin(new Insets(20, 150, 20, 150));
         
-        JPanel textPanel = new JPanel(new BorderLayout());
+        textPanel = new JPanel(new BorderLayout());
         textPanel.setBackground(Color.BLACK);
         textPanel.add(textArea, BorderLayout.CENTER);
-        textPanel.setPreferredSize(new Dimension(1300, 400));
+        textPanel.setPreferredSize(new Dimension(1300, 300));
         add(textPanel, BorderLayout.SOUTH);
 
         typewriterTimer = new Timer(50, e -> processTypewriterEffect());
@@ -105,12 +114,12 @@ public class CutsceneGUI extends JPanel {
     }
 
     private void loadAssets() {
-        imgFront = loadSafeImage("/assets/cutscenes/char_1_front.png");
-        imgBack  = loadSafeImage("/assets/cutscenes/char_1_back.png");
-        imgLeft  = loadSafeImage("/assets/cutscenes/char_1_left.png");
-        imgRight = loadSafeImage("/assets/cutscenes/char_1_right.png");
-        bgRoad1  = loadSafeImage("/assets/cutscenes/road_1.png");
-        bgRoad2  = loadSafeImage("/assets/cutscenes/road_2.png");
+        imgFront = AssetCache.get("/assets/cutscenes/char_1_front.png");
+        imgBack  = AssetCache.get("/assets/cutscenes/char_1_back.png");
+        imgLeft  = AssetCache.get("/assets/cutscenes/char_1_left.png");
+        imgRight = AssetCache.get("/assets/cutscenes/char_1_right.png");
+        bgRoad1  = AssetCache.get("/assets/cutscenes/road_1.png");
+        bgRoad2  = AssetCache.get("/assets/cutscenes/road_2.png");
         currentPlayerImg = imgRight; 
     }
 
@@ -158,11 +167,32 @@ public class CutsceneGUI extends JPanel {
             }
         }
     }
-    
-    private Image loadSafeImage(String path) {
-        URL url = getClass().getResource(path);
-        if (url != null) return new ImageIcon(url).getImage();
-        return null;
+    private void setupResponsiveListener() {
+        this.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                int w = getWidth();
+                int h = getHeight();
+                int textH = textPanel.getPreferredSize().height;
+                int animH = h - textH;
+
+                layeredPane.setBounds(0, 0, w, animH);
+                animPanel.setBounds(0, 0, w, animH);
+                
+                btnSkip.setBounds(w - 170, 20, 150, 40);
+                btnOpenDoor.setBounds((w - 300) / 2, (animH - 60) / 2 + 100, 300, 60);
+                
+                revalidate();
+                repaint();
+            }
+        });
+    }
+
+    @Override
+    public void stopAllProcesses() {
+        if (typewriterTimer != null && typewriterTimer.isRunning()) typewriterTimer.stop();
+        if (animationTimer != null && animationTimer.isRunning()) animationTimer.stop();
+        System.out.println("[CLEANUP] Cutscene processes stopped.");
     }
     
     private void setDialogue(String text) {

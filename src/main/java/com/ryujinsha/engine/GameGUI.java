@@ -1,200 +1,204 @@
 package com.ryujinsha.engine;
 
 import com.ryujinsha.entity.*;
-import com.ryujinsha.system.TimeSystem;
+import com.ryujinsha.system.AssetCache;
+import com.ryujinsha.system.AudioManager;
+import com.ryujinsha.system.ResourceManaged;
 
 import javax.swing.*;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.awt.geom.Point2D;
+import java.awt.event.ActionEvent;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.net.URL;
 
-public class GameGUI extends JPanel { 
-    private MainFrame mainFrame; 
+/**
+ * ✨ GameGUI — Layar Permainan Utama (Versi Refactored)
+ *
+ * Perubahan dari versi sebelumnya:
+ * - Hitbox terpusat di HitboxConfig (mudah dikalibrasi)
+ * - Rendering terpusat di RenderEngine (satu sumber kebenaran)
+ * - Gambar di-cache via AssetCache (tidak re-load berulang)
+ * - MainFrame responsif via ComponentListener
+ * - Bug path idle Hina diperbaiki
+ * - Konsistensi EnemyB sebagai entitas ventilasi
+ */
+public class GameGUI extends JPanel implements ResourceManaged {
 
-    // --- 1. DATA LOGIC GAME ---
+    private MainFrame mainFrame;
+
+    // ============================================================
+    // 1. DATA LOGIC GAME
+    // ============================================================
     private Player player;
-    private EnemyOdd enemyA;
-    private EnemyEven enemyB;
-    private EnemyRandom enemyC;
-    private boolean areEnemiesActive = false;
-    private int tickCounter = 0;
+    private EnemyOdd enemyA; // The Red One (Pintu Depan)
+    private EnemyEven enemyB; // Hina (Ventilasi)
+    private boolean areEnemiesActive = true;
     private boolean isGameOver = false;
-    
-    private JLabel statusLabel;
-    
-    private PixelButton btnTablet, btnLeftDoor, btnRightDoor, btnLookLeft, btnLookRight;
-    private JLayeredPane layeredPane; 
-    
-    private JPanel officePanel;
-    private JPanel tabletOverlayPanel;
-    
-    // --- 2. SISTEM PERBAIKAN & KEYPAD ---
-    private JProgressBar repairProgressBar;
-    private JButton btnStartRepair;
-    private int repairProgress = 0;
-    private boolean isRepairing = false;
-    private Timer repairTimer;
-    private boolean isKeypadActive = false; 
-    
-    private JPanel keypadPopupPanel;
-    private JLabel keypadDisplayLabel;
-    private String secretPin = "";
-    private String currentPinInput = "";
-    
-    // --- 3. SISTEM EASTER EGG & SECOND CHANCE ---
-    private boolean hasSecondChance = true;
-    private boolean pinRevealed = false;
-    private Rectangle hiddenPinFront;
-    private Rectangle hiddenPinBack;
 
-    // ✨ 4. STATUS LEMARI RAHASIA
-    private boolean isHiddenInLocker = false;
-    
+    private JLabel statusLabel;
+    private PixelButton btnDoor, btnLookLeft, btnLookRight;
+    private JLayeredPane layeredPane;
+    private JPanel officePanel;
+
+    // ============================================================
+    // 2. SISTEM LOCKPICK
+    // ============================================================
+    private JPanel lockpickPopupPanel;
+    private int lockBars = 0;
+    private int scrubDistance = 0;
+    private int lastMouseX = -1;
+    private Timer lockDrainTimer;
+
+    // ============================================================
+    // 3. MEKANIK BERSEMBUNYI, STRUGGLE & ANIMASI
+    // ============================================================
+    private boolean isHidden = false;
+    private boolean isStruggling = false;
+    private int struggleValue = 50;
+    private Timer struggleTimer;
+    private Enemy currentAttacker = null;
+    private boolean hidEarly = false;
+
+    // Aset Animasi QTE Kabinet
+    private Image qteBodyImg, qteHandLeftImg, qteHandRightImg;
+    private int struggleAnimCounter = 0;
+
+    // ✨ BARU: Sistem Animasi Retreat (Mundur)
+    private boolean isRetreating = false;
+    private int retreatAnimTicks = 0;
+    private Enemy lastDefeatedEnemy = null;
+    private Image retreatImg = null;
+    private Timer retreatTimer;
+
+    // ============================================================
+    // 4. UI OVERLAY
+    // ============================================================
     private JPanel endScreenPanel;
     private JLabel endTitleLabel;
     private JLabel endMessageLabel;
 
-    private Image leftDoorVisual = null;
-    private Image rightDoorVisual = null;
+    // ============================================================
+    // 5. VISUAL STATE
+    // ============================================================
+    private Image doorEnemyVisual = null;
+    private Image ventEnemyVisual = null;
 
-    private Timer gameLoopTimer; 
+    private Timer gameLoopTimer;
     private Timer quoteTimer;
-    
     private boolean isLookingBack = false;
+    private float vignetteIntensity = 0f; // ✨ BARU: Intensitas efek vignette
+
+    // Path konstanta aset ruangan
+    private static final String PATH_FRONT_ROOM = "/assets/rooms/front_room.png";
+    private static final String PATH_FRONT_DOOR = "/assets/rooms/front_door.png";
+    private static final String PATH_BACK_DOOR = "/assets/rooms/back_door.png";
+    private static final String PATH_BACK_DOOR_OPENED = "/assets/rooms/back_door_opened.png";
+    private static final String PATH_LOCK_DOOR = "/assets/rooms/lock_door.png";
+
+    // ============================================================
+    // CONSTRUCTOR
+    // ============================================================
 
     public GameGUI(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
         initGameData();
+        preloadCriticalAssets();
 
+        setBackground(Color.BLACK);
         setLayout(new BorderLayout());
+
         layeredPane = new JLayeredPane();
+        layeredPane.setBackground(Color.BLACK);
+        layeredPane.setOpaque(true);
         add(layeredPane, BorderLayout.CENTER);
 
         setupUI();
-        setupResponsiveListener(); 
+        setupResponsiveListener();
         setupGameLoop();
+        setupKeyBindings();
     }
+
+    // ============================================================
+    // INISIALISASI DATA
+    // ============================================================
 
     private void initGameData() {
         this.player = new Player("Night Guard");
-        this.enemyA = new EnemyOdd("Epstein", 20);  
-        this.enemyB = new EnemyEven("Diddy", 20);   
-        this.enemyC = new EnemyRandom("Wowo", 15);  
-        this.areEnemiesActive = false;
-        this.tickCounter = 0;
-        this.isGameOver = false;
-        this.repairProgress = 0;
-        this.isRepairing = false;
-        this.isLookingBack = false;
-        this.isKeypadActive = false; 
-        this.isHiddenInLocker = false; // Reset Lemari
-        
-        this.secretPin = String.format("%04d", (int)(Math.random() * 10000));
-        this.currentPinInput = "";
-        
-        this.hasSecondChance = true;
-        this.pinRevealed = false;
-        
-        int rx1 = (int)(Math.random() * 1000) + 150;
-        int ry1 = (int)(Math.random() * 600) + 100;
-        hiddenPinFront = new Rectangle(rx1, ry1, 80, 80);
+        this.enemyA = new EnemyOdd("The Red One", 20);
+        this.enemyB = new EnemyEven("Hina", 20);
 
-        int rx2 = (int)(Math.random() * 1000) + 150;
-        int ry2 = (int)(Math.random() * 600) + 100;
-        hiddenPinBack = new Rectangle(rx2, ry2, 80, 80);
+        this.areEnemiesActive = true;
+        this.isGameOver = false;
+        this.isLookingBack = false;
+        this.lockBars = 0;
+        this.scrubDistance = 0;
+        this.isHidden = false;
+        this.isStruggling = false;
+        this.struggleValue = 50;
+        this.doorEnemyVisual = null;
+        this.ventEnemyVisual = null;
+        this.hidEarly = false;
+        this.struggleAnimCounter = 0;
+
+        // Reset retreat state
+        this.isRetreating = false;
+        this.retreatAnimTicks = 0;
+        this.lastDefeatedEnemy = null;
+        this.retreatImg = null;
     }
 
+    /**
+     * Pre-load semua aset penting ke AssetCache sebelum game dimulai.
+     * Ini mencegah lag saat runtime pertama kali aset dibutuhkan.
+     */
+    private void preloadCriticalAssets() {
+        AssetCache.preload(
+                PATH_FRONT_ROOM,
+                PATH_FRONT_DOOR,
+                PATH_BACK_DOOR,
+                PATH_BACK_DOOR_OPENED,
+                PATH_LOCK_DOOR,
+                "/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png",
+                "/assets/enemies/enemy_a_door/idle/the-red-idle-phase-2.png",
+                "/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
+    }
+
+    // ============================================================
+    // SETUP UI
+    // ============================================================
+
     private void setupUI() {
+        // Status bar atas
         JPanel topPanel = new JPanel();
         topPanel.setBackground(Color.DARK_GRAY);
-        statusLabel = new JLabel("Menyiapkan sistem...");
-        statusLabel.setForeground(Color.WHITE);
-        statusLabel.setFont(new Font("Consolas", Font.BOLD, 18)); 
+        statusLabel = new JLabel(
+                "Objective: Bobol gembok pintu belakang.  [A/D]=Lihat  [E]=Pintu  [W]=Sembunyi  [S]=Congkel  [ESC]=Keluar");
+        statusLabel.setForeground(Color.YELLOW);
+        statusLabel.setFont(new Font("Consolas", Font.BOLD, 18));
         topPanel.add(statusLabel);
         add(topPanel, BorderLayout.NORTH);
 
+        // Panel render utama (menggambar background + enemy)
+        // ✨ FIX: Mouse listener dipasang di officePanel (bukan layeredPane) karena
+        // officePanel menutupi seluruh layeredPane sehingga semua klik masuk ke sini.
         officePanel = new JPanel() {
-            private Image bgBawah, bgAtas, doorLeftImg, doorRightImg, bgBack; 
-
-            {
-                URL urlBawah = getClass().getResource("/assets/office_bg.png");
-                if (urlBawah != null) bgBawah = new ImageIcon(urlBawah).getImage();
-
-                URL urlAtas = getClass().getResource("/assets/office_front.png");
-                if (urlAtas != null) bgAtas = new ImageIcon(urlAtas).getImage();
-
-                URL urlDoorL = getClass().getResource("/assets/door_left.png");
-                if (urlDoorL != null) doorLeftImg = new ImageIcon(urlDoorL).getImage();
-
-                URL urlDoorR = getClass().getResource("/assets/door_right.png");
-                if (urlDoorR != null) doorRightImg = new ImageIcon(urlDoorR).getImage();
-                
-                URL urlBack = getClass().getResource("/assets/back_side.png");
-                if (urlBack != null) bgBack = new ImageIcon(urlBack).getImage();
-            }
-
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-
-                // 1. Gambar Base Room (Belakang atau Depan)
-                if (isLookingBack) {
-                    if (bgBack != null) g.drawImage(bgBack, 0, 0, getWidth(), getHeight(), this);
-                    else { g.setColor(Color.BLACK); g.fillRect(0, 0, getWidth(), getHeight()); }
-                } else {
-                    if (bgBawah != null) g.drawImage(bgBawah, 0, 0, getWidth(), getHeight(), this);
-                    else { g.setColor(Color.BLACK); g.fillRect(0, 0, getWidth(), getHeight()); }
-
-                    int doorW = getWidth() / 4; 
-                    int doorH = (int)(getHeight() * 0.7); 
-                    int doorY = getHeight() - doorH - 20;
-
-                    if (leftDoorVisual != null && !player.isLeftDoorClosed()) g.drawImage(leftDoorVisual, getWidth() / 10, doorY, doorW, doorH, this);
-                    if (rightDoorVisual != null && !player.isRightDoorClosed()) g.drawImage(rightDoorVisual, getWidth() - doorW - (getWidth() / 10), doorY, doorW, doorH, this);
-                    if (bgAtas != null) g.drawImage(bgAtas, 0, 0, getWidth(), getHeight(), this);
-                    if (player.isLeftDoorClosed() && doorLeftImg != null) g.drawImage(doorLeftImg, 0, 0, getWidth(), getHeight(), this);
-                    if (player.isRightDoorClosed() && doorRightImg != null) g.drawImage(doorRightImg, 0, 0, getWidth(), getHeight(), this);
-                }
-
-                // ✨ 2. EFEK VISUAL: Celah Lemari (Slit View)
-                if (isHiddenInLocker) {
-                    g.setColor(new Color(0, 0, 0, 245)); // Hitam sangat pekat (hampir solid)
-                    
-                    int slitWidth = getWidth() / 8; // Lebar celah
-                    int slitX = (getWidth() - slitWidth) / 2; // Posisi celah di tengah
-                    
-                    // Gambar kotak hitam di kiri dan kanan celah
-                    g.fillRect(0, 0, slitX, getHeight());
-                    g.fillRect(slitX + slitWidth, 0, getWidth() - (slitX + slitWidth), getHeight());
-                    
-                    // Gambar pinggiran atas dan bawah celah agar terlihat seperti lubang loker
-                    int slitY = getHeight() / 6;
-                    int slitH = getHeight() - (slitY * 2);
-                    g.fillRect(slitX, 0, slitWidth, slitY);
-                    g.fillRect(slitX, slitY + slitH, slitWidth, getHeight() - (slitY + slitH));
-
-                    // Teks Instruksi
-                    g.setColor(Color.WHITE);
-                    g.setFont(new Font("Consolas", Font.BOLD, 20));
-                    g.drawString(">>> MENGINTIP DARI DALAM LEMARI <<<", 30, 40);
-                    g.drawString("(Klik di mana saja untuk keluar)", 30, 70);
-                }
+                paintGame((Graphics2D) g);
             }
         };
         layeredPane.add(officePanel, JLayeredPane.DEFAULT_LAYER);
 
         setupInteractionHits();
-        
-        setupKeypadPopupUI();
-        layeredPane.add(keypadPopupPanel, JLayeredPane.MODAL_LAYER);
-        keypadPopupPanel.setVisible(false);
-
-        setupTabletOverlay();
-        layeredPane.add(tabletOverlayPanel, JLayeredPane.PALETTE_LAYER);
-        tabletOverlayPanel.setVisible(false);
+        setupLockpickUI();
+        layeredPane.add(lockpickPopupPanel, JLayeredPane.MODAL_LAYER);
+        lockpickPopupPanel.setVisible(false);
 
         setupEndScreen();
         layeredPane.add(endScreenPanel, JLayeredPane.POPUP_LAYER);
@@ -203,217 +207,534 @@ public class GameGUI extends JPanel {
         setupFloatingControls();
     }
 
-    // ✨ METHOD KUNCI: Mengatur Kapan Tombol Boleh Muncul
-    private void updateUIVisibility() {
-        if (isGameOver) return;
-        
-        boolean isTabOpen = player.isTabletOpen();
-        boolean isKeypadOpen = keypadPopupPanel.isVisible();
-        boolean isFront = !isLookingBack;
+    // ============================================================
+    // RENDERING UTAMA
+    // ============================================================
 
-        // Kontrol Utama (Pintu & Tablet) hanya muncul jika menghadap DEPAN dan TIDAK di dalam lemari
-        btnLeftDoor.setVisible(isFront && !isHiddenInLocker);
-        btnRightDoor.setVisible(isFront && !isHiddenInLocker);
-        btnTablet.setVisible(isFront && !isHiddenInLocker);
+    /**
+     * Dipanggil dari paintComponent officePanel.
+     * Semua logika render ada di sini agar terstruktur.
+     */
+    private void paintGame(Graphics2D g2d) {
+        int pw = officePanel.getWidth();
+        int ph = officePanel.getHeight();
 
-        // Tombol Menoleh tidak boleh muncul jika sedang buka Tablet, Keypad, atau di dalam Lemari
-        btnLookLeft.setVisible(!isTabOpen && !isKeypadOpen && !isHiddenInLocker);
-        btnLookRight.setVisible(!isTabOpen && !isKeypadOpen && !isHiddenInLocker);
+        // Background hitam (letterbox)
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(0, 0, pw, ph);
+
+        // Ambil batas cangkang
+        Rectangle bounds = RenderEngine.getGameBounds(pw, ph);
+
+        if (isLookingBack) {
+            paintBackRoom(g2d, bounds);
+        } else {
+            paintFrontRoom(g2d, bounds);
+        }
+
+        if (isHidden) {
+            paintCabinetView(g2d, bounds, pw, ph);
+        }
+
+        // ✨ BARU: Render vignette indicator
+        if (vignetteIntensity > 0) {
+            paintVignette(g2d, pw, ph);
+        }
+
+        // ✨ BARU: Render overlay animasi retreat (saat musuh kabur)
+        if (isRetreating) {
+            paintRetreatOverlay(g2d, bounds);
+        }
     }
+
+    private void paintFrontRoom(Graphics2D g2d, Rectangle bounds) {
+        // 1. Render Enemy B Phase 1: Show Up on Vent (patience == 3)
+        // Hina partially visible in the vent opening
+        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() == 3 && !isStruggling && !isRetreating) {
+            Image ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
+            if (ventSprite != null) {
+                RenderEngine.drawSprite(g2d, ventSprite, bounds,
+                        HitboxConfig.ENEMY_B_SPRITE_X, HitboxConfig.ENEMY_B_SPRITE_Y,
+                        HitboxConfig.ENEMY_B_SPRITE_W, HitboxConfig.ENEMY_B_SPRITE_H,
+                        true, officePanel);
+            }
+        }
+
+        // 2. Render Enemy A (The Red One - Pintu Depan)
+        if (doorEnemyVisual != null && !player.isLeftDoorClosed()) {
+            RenderEngine.drawSprite(g2d, doorEnemyVisual, bounds,
+                    HitboxConfig.ENEMY_A_SPRITE_X, HitboxConfig.ENEMY_A_SPRITE_Y,
+                    HitboxConfig.ENEMY_A_SPRITE_W, HitboxConfig.ENEMY_A_SPRITE_H,
+                    true, officePanel);
+        }
+
+        // 3. Render Enemy B Phase 2: Idle in Front (patience <= 2)
+        // Hina fully visible, standing in front of the player
+        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() <= 2 && !isStruggling && !isRetreating) {
+            Image hinaImg = getIdleSprite(enemyB);
+            if (hinaImg != null) {
+                RenderEngine.drawSprite(g2d, hinaImg, bounds,
+                        HitboxConfig.ENEMY_B_PHASE2_X, HitboxConfig.ENEMY_B_PHASE2_Y,
+                        HitboxConfig.ENEMY_B_PHASE2_W, HitboxConfig.ENEMY_B_PHASE2_H,
+                        true, officePanel);
+            }
+        }
+
+        // 4. Render ruangan depan (di atas enemy agar enemy tampak berada di balik
+        // dinding)
+        Image imgFront = AssetCache.get(PATH_FRONT_ROOM);
+        if (imgFront != null) {
+            g2d.drawImage(imgFront, bounds.x, bounds.y, bounds.width, bounds.height, officePanel);
+        }
+
+        // 5. Render pintu tertutup (overlay di atas ruangan)
+        if (player.isLeftDoorClosed()) {
+            Image imgDoor = AssetCache.get(PATH_FRONT_DOOR);
+            if (imgDoor != null) {
+                g2d.drawImage(imgDoor, bounds.x, bounds.y, bounds.width, bounds.height, officePanel);
+            }
+        }
+    }
+
+    private void paintBackRoom(Graphics2D g2d, Rectangle bounds) {
+        // Tampilkan pintu belakang (terbuka atau terkunci)
+        boolean isUnlocked = (lockBars >= 6);
+        String path = isUnlocked ? PATH_BACK_DOOR_OPENED : PATH_BACK_DOOR;
+        Image img = AssetCache.get(path);
+        if (img != null) {
+            g2d.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height, officePanel);
+        }
+
+        // ============================================================
+        // DEBUG HITBOX: Aktifkan baris-baris di bawah ini saat kalibrasi
+        // ============================================================
+        RenderEngine.drawHitboxDebug(g2d, HitboxConfig.CABINET_HITBOX, bounds,
+                new Color(0, 255, 0, 180));
+        RenderEngine.drawHitboxDebug(g2d, HitboxConfig.LOCKDOOR_HITBOX, bounds,
+                new Color(255, 0, 0, 180));
+    }
+
+    private void paintCabinetView(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
+        if (isStruggling && qteBodyImg != null) {
+            // ✨ OVERHAUL QTE: Delegasikan seluruh perenderan ke paintStruggleQTE untuk
+            // kontrol layering
+            paintStruggleQTE(g2d, bounds, pw, ph);
+        } else {
+            // === RENDER IDLE CABINET (Tanpa Struggle) ===
+            int slitWidth = (int) (bounds.width * HitboxConfig.CABINET_SLIT_WIDTH_FRACTION);
+            int slitX = bounds.x + (bounds.width - slitWidth) / 2;
+            int slitMarginV = (int) (bounds.height * HitboxConfig.CABINET_SLIT_MARGIN_FRACTION);
+            int slitY = bounds.y + slitMarginV;
+            int slitH = bounds.height - slitMarginV * 2;
+
+            // Blackout seluruh layar kecuali celah (Idle)
+            g2d.setColor(Color.BLACK);
+            g2d.fillRect(0, 0, slitX, ph); // kiri
+            g2d.fillRect(slitX + slitWidth, 0, pw - (slitX + slitWidth), ph); // kanan
+            g2d.fillRect(slitX, 0, slitWidth, slitY); // atas celah
+            g2d.fillRect(slitX, slitY + slitH, slitWidth, ph - (slitY + slitH)); // bawah celah
+
+            // Teks panduan
+            g2d.setColor(Color.WHITE);
+            g2d.setFont(new Font("Consolas", Font.BOLD, 20));
+            g2d.drawString(">>> MENGINTIP DARI DALAM KABINET <<<", 30, 40);
+        }
+    }
+
+    /**
+     * Render overlay musuh yang sedang kabur (retreat).
+     */
+    private void paintRetreatOverlay(Graphics2D g2d, Rectangle bounds) {
+        if (retreatImg == null || lastDefeatedEnemy == null)
+            return;
+
+        // ✨ OVERHAUL: Efek Zoom-Out (Mengecil) saat mundur
+        double progress = (double) retreatAnimTicks / HitboxConfig.RETREAT_DURATION_TICKS;
+        double scaleFactor = 1.3 - (progress * 0.5); // Mulai dari 1.3x mengecil ke 0.8x
+        
+        // Hitung posisi horizontal berdasarkan tick (meluncur ke samping)
+        int xOffset = retreatAnimTicks * HitboxConfig.RETREAT_SPEED_X;
+
+        // Pilih posisi asal berdasarkan enemy (Hina di kanan, Red One di kiri)
+        int basePosX, basePosY, baseW, baseH;
+        if (lastDefeatedEnemy == enemyB) {
+            // ✨ OVERHAUL HINA RETREAT: Berukuran besar dan bergerak ke arah KANAN
+            double hinaScale = scaleFactor * 1.5; // Lebih besar sesuai permintaan
+            basePosX = HitboxConfig.ENEMY_B_PHASE2_X + xOffset;
+            basePosY = HitboxConfig.ENEMY_B_PHASE2_Y;
+            baseW = (int) (HitboxConfig.ENEMY_B_PHASE2_W * hinaScale);
+            baseH = (int) (HitboxConfig.ENEMY_B_PHASE2_H * hinaScale);
+            
+            // Render manual agar bisa "di belakang/luar" black bar jika perlu (clipping otomatis oleh Graphics context)
+            RenderEngine.drawSprite(g2d, retreatImg, bounds, basePosX, basePosY - 50, baseW, baseH, true, officePanel);
+        } else {
+            // Enemy A mundur ke arah kiri
+            basePosX = HitboxConfig.ENEMY_A_SPRITE_X - xOffset;
+            basePosY = HitboxConfig.ENEMY_A_SPRITE_Y;
+            baseW = (int) (HitboxConfig.ENEMY_A_SPRITE_W * scaleFactor);
+            baseH = (int) (HitboxConfig.ENEMY_A_SPRITE_H * scaleFactor);
+            RenderEngine.drawSprite(g2d, retreatImg, bounds, basePosX, basePosY - 50, baseW, baseH, true, officePanel);
+        }
+    }
+
+    private void paintStruggleQTE(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
+        // 1. HITUNG DIMENSI CELAH (Berdasarkan Progress)
+        // 100% (Menang) = Mingkem (Min Slit), 0% (Kalah) = Mangap (Max Slit)
+        double progressRatio = struggleValue / 100.0;
+        int slitWidth = (int) (HitboxConfig.QTE_SLIT_WIDTH_MAX -
+                (progressRatio * (HitboxConfig.QTE_SLIT_WIDTH_MAX - HitboxConfig.QTE_SLIT_WIDTH_MIN)));
+
+        int slitX = bounds.x + (bounds.width - slitWidth) / 2;
+        int slitMarginV = (int) (bounds.height * HitboxConfig.CABINET_SLIT_MARGIN_FRACTION);
+        int slitY = bounds.y + slitMarginV;
+        int slitH = bounds.height - slitMarginV * 2;
+
+        // 2. LAYER 1: Gambar tubuh musuh (PALING BELAKANG)
+        // ✨ MODIFIKASI: Body dibuat lebih besar (1.1 -> 1.4) agar lebih realistis
+        int bodyH = (int) (slitH * 1.4); 
+        int bodyOrigW = qteBodyImg.getWidth(officePanel);
+        int bodyOrigH = qteBodyImg.getHeight(officePanel);
+        int bodyW = (bodyOrigH > 0) ? (bodyH * bodyOrigW / bodyOrigH) : slitWidth;
+        int bodyX = bounds.x + (bounds.width - bodyW) / 2;
+        int bodyY = slitY - (bodyH - slitH) / 2;
+
+        g2d.drawImage(qteBodyImg, bodyX, bodyY, bodyW, bodyH, officePanel);
+
+        // 3. LAYER 2: Gambar "Mask" Hitam (Pintu Kabinet)
+        // Ini akan menutupi tubuh musuh di sisi kiri dan kanan
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(0, 0, slitX, ph); // Bar Kiri
+        g2d.fillRect(slitX + slitWidth, 0, pw - (slitX + slitWidth), ph); // Bar Kanan
+        g2d.fillRect(slitX, 0, slitWidth, slitY); // Bar Atas
+        g2d.fillRect(slitX, slitY + slitH, slitWidth, ph - (slitY + slitH)); // Bar Bawah
+
+        // 4. LAYER 3: Gambar tangan musuh (PALING DEPAN — di atas black bars / screen edges)
+        if (qteHandLeftImg != null && qteHandRightImg != null) {
+            int handH = (int) (slitH * 0.85);
+            int hOrigW = qteHandLeftImg.getWidth(officePanel);
+            int hOrigH = qteHandLeftImg.getHeight(officePanel);
+            int handW = (hOrigH > 0) ? (handH * hOrigW / hOrigH) : (slitWidth / 2);
+
+            int handY = slitY + (slitH - handH) / 2;
+
+            // ✨ REPOSITION: Tangan kiri ditempel ke tepi kiri layar (black bar area)
+            // Ujung kanan tangan menyentuh slit edge
+            int lx = slitX - handW + (handW / 5);
+            g2d.drawImage(qteHandLeftImg, lx, handY, handW, handH, officePanel);
+
+            // ✨ REPOSITION: Tangan kanan ditempel ke tepi kanan layar (black bar area)
+            int rx = slitX + slitWidth - (handW / 5);
+            g2d.drawImage(qteHandRightImg, rx, handY, handW, handH, officePanel);
+        }
+
+        // 5. Teks & Bar UI
+        g2d.setColor(Color.RED);
+        g2d.setFont(new Font("Consolas", Font.BOLD, 30));
+        String warn = "!!! TAHAN PINTU !!!";
+        FontMetrics fm = g2d.getFontMetrics();
+        g2d.drawString(warn, (pw - fm.stringWidth(warn)) / 2, ph / 2 - 120);
+
+        int barW = 500, barH = 25;
+        int barX = (pw - barW) / 2;
+        int barY = ph - 100;
+        g2d.setColor(Color.BLACK);
+        g2d.fillRect(barX, barY, barW, barH);
+
+        if (struggleValue < 30)
+            g2d.setColor(Color.RED);
+        else if (struggleValue < 70)
+            g2d.setColor(Color.YELLOW);
+        else
+            g2d.setColor(Color.GREEN);
+        g2d.fillRect(barX, barY, (int) ((progressRatio) * barW), barH);
+
+        g2d.setColor(Color.WHITE);
+        g2d.drawRect(barX, barY, barW, barH);
+
+        g2d.setFont(new Font("Consolas", Font.BOLD, 18));
+        String instText = "SPAM KLIK ATAU SPASI! [" + struggleValue + "%]";
+        FontMetrics fmT = g2d.getFontMetrics();
+        g2d.drawString(instText, (pw - fmT.stringWidth(instText)) / 2, barY - 15);
+    }
+
+    /**
+     * Menggambar efek vignette (hitam di pinggir) sebagai penanda bahaya.
+     */
+    private void paintVignette(Graphics2D g2d, int w, int h) {
+        float alpha = Math.min(0.8f, vignetteIntensity);
+        RadialGradientPaint rgp = new RadialGradientPaint(
+                new Point2D.Float(w / 2f, h / 2f),
+                Math.max(w, h) / 1.5f,
+                new float[] { 0.0f, 0.8f, 1.0f },
+                new Color[] { new Color(0, 0, 0, 0), new Color(0, 0, 0, (int) (alpha * 150)), new Color(0, 0, 0, (int) (alpha * 255)) }
+        );
+        g2d.setPaint(rgp);
+        g2d.fillRect(0, 0, w, h);
+    }
+
+    // ============================================================
+    // SETUP INTERAKSI KLIK (HITBOX SYSTEM)
+    // ============================================================
 
     private void setupInteractionHits() {
-        layeredPane.addMouseListener(new MouseAdapter() {
+        // ✨ FIX KRITIS: Listener dipasang di officePanel, BUKAN layeredPane.
+        // layeredPane tidak pernah menerima klik karena officePanel menutupi
+        // seluruh areanya. Swing mengirim event ke child paling atas (officePanel).
+        officePanel.addMouseListener(new MouseAdapter() {
             @Override
-            public void mouseClicked(MouseEvent e) {
-                if (isGameOver) return;
+            public void mousePressed(MouseEvent e) {
+                if (isGameOver)
+                    return;
+                requestFocusInWindow();
 
-                // ✨ 1. LOGIKA KELUAR DARI LEMARI
-                if (isHiddenInLocker) {
-                    isHiddenInLocker = false;
-                    isLookingBack = true; // ✨ Kembali menghadap belakang (karena posisi lemari di belakang)
-                    com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_open.wav"); 
-                    logEvent("🚪 Kamu keluar dari lemari.");
-                    updateUIVisibility();
-                    officePanel.repaint();
-                    return; 
-                }
-
-                int w = layeredPane.getWidth();
-                int h = layeredPane.getHeight();
-                int finalX = (e.getX() * 1300) / w; 
-                int finalY = (e.getY() * 900) / h; 
-
-                // 2. Cek Hitbox Rahasia PIN (Mencegah klik pin tidak sengaja saat di lemari)
-                if (!pinRevealed && !player.isTabletOpen() && !isHiddenInLocker) {
-                    boolean foundFront = !isLookingBack && hiddenPinFront.contains(finalX, finalY);
-                    boolean foundBack = isLookingBack && hiddenPinBack.contains(finalX, finalY);
-                    
-                    if (foundFront || foundBack) {
-                        pinRevealed = true;
-                        logEvent("🔍 [DISCOVERY] Kamu menemukan coretan tersembunyi! PIN: " + secretPin);
-                        com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/light_switch.wav"); 
-                        JOptionPane.showMessageDialog(layeredPane, "Kamu melihat goresan di dinding...\nAngkanya terlihat seperti: " + secretPin, "Secret Note Found", JOptionPane.INFORMATION_MESSAGE);
-                    }
-                }
-
-                if (isLookingBack && !keypadPopupPanel.isVisible()) {
-                    // 3. Cek Hitbox Keypad
-                    Rectangle keypadArea = new Rectangle(750, 300, 200, 250); 
-                    if (keypadArea.contains(finalX, finalY)) {
-                        logEvent("🔍 [INTERACT] Membuka antarmuka Keypad...");
-                        if (!isKeypadActive) {
-                            keypadDisplayLabel.setText("ERR: NO POWER");
-                            keypadDisplayLabel.setForeground(Color.RED);
-                        } else {
-                            currentPinInput = "";
-                            keypadDisplayLabel.setText("----");
-                            keypadDisplayLabel.setForeground(new Color(150, 200, 255));
-                        }
-                        keypadPopupPanel.setVisible(true);
-                        updateUIVisibility();
-                        return; 
-                    }
-
-                    // ✨ 4. Cek Hitbox Lemari
-                    Rectangle lockerArea = new Rectangle(950, 150, 300, 650);
-                    if (lockerArea.contains(finalX, finalY)) {
-                        isHiddenInLocker = true;
-                        isLookingBack = false; // ✨ PAKSA MENGHADAP DEPAN: Karakter melihat ke arah office_front
-                        com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_close.wav"); 
-                        logEvent("🚪 [HIDE] Kamu masuk ke dalam lemari dan memantau ruang depan.");
-                        updateUIVisibility();
+                // Prioritas 1: Struggle QTE - klik mana pun dihitung
+                if (isStruggling) {
+                    struggleValue += 15;
+                    if (struggleValue >= 100)
+                        checkStruggleWin();
+                    else {
+                        struggleAnimCounter += 2;
                         officePanel.repaint();
                     }
+                    return;
+                }
+
+                // Prioritas 2: Keluar dari kabinet
+                if (isHidden) {
+                    exitCabinet();
+                    return;
+                }
+
+                // ✨ Konversi klik layar → koordinat game space via RenderEngine
+                Rectangle bounds = RenderEngine.getGameBounds(
+                        officePanel.getWidth(), officePanel.getHeight());
+                Point gamePoint = RenderEngine.screenToGame(e.getPoint(), bounds);
+
+                // Abaikan klik di black bar (luar area game)
+                if (gamePoint.x < 0)
+                    return;
+
+                // Prioritas 3: Interaksi di back room
+                if (isLookingBack && !lockpickPopupPanel.isVisible()) {
+                    handleBackRoomClick(gamePoint);
                 }
             }
         });
     }
 
-    private void setupKeypadPopupUI() {
-        keypadPopupPanel = new JPanel();
-        keypadPopupPanel.setBackground(new Color(20, 20, 20, 240));
-        keypadPopupPanel.setBorder(BorderFactory.createLineBorder(Color.DARK_GRAY, 5));
-        keypadPopupPanel.setLayout(new BorderLayout(10, 10));
-
-        keypadDisplayLabel = new JLabel("----", SwingConstants.CENTER);
-        keypadDisplayLabel.setFont(new Font("Consolas", Font.BOLD, 48));
-        keypadDisplayLabel.setForeground(new Color(150, 200, 255)); 
-        keypadDisplayLabel.setBackground(new Color(10, 30, 50));
-        keypadDisplayLabel.setOpaque(true);
-        keypadDisplayLabel.setBorder(BorderFactory.createEmptyBorder(20, 20, 20, 20));
-        keypadPopupPanel.add(keypadDisplayLabel, BorderLayout.NORTH);
-
-        JPanel gridPanel = new JPanel(new GridLayout(4, 3, 5, 5));
-        gridPanel.setOpaque(false);
-        String[] buttons = {"1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "ENT"};
-        
-        for (String text : buttons) {
-            JButton btn = new JButton(text);
-            btn.setFont(new Font("Consolas", Font.BOLD, 24));
-            btn.setBackground(Color.DARK_GRAY);
-            btn.setForeground(Color.WHITE);
-            btn.setFocusPainted(false);
-            btn.addActionListener(e -> handleKeypadInput(text));
-            gridPanel.add(btn);
-        }
-        keypadPopupPanel.add(gridPanel, BorderLayout.CENTER);
-
-        JButton btnCloseKeypad = new JButton("TUTUP KEYPAD");
-        btnCloseKeypad.setBackground(Color.RED);
-        btnCloseKeypad.setForeground(Color.WHITE);
-        btnCloseKeypad.addActionListener(e -> {
-            keypadPopupPanel.setVisible(false);
-            updateUIVisibility(); // Kembalikan tombol Look
-        });
-        keypadPopupPanel.add(btnCloseKeypad, BorderLayout.SOUTH);
-    }
-
-    private void handleKeypadInput(String key) {
-        if (isGameOver) return;
-
-        if (!isKeypadActive) {
-            keypadDisplayLabel.setText("ERR: NO POWER");
+    /**
+     * Menangani klik di ruang belakang.
+     * Hitbox diambil dari HitboxConfig — mudah di-tweak tanpa modifikasi logika.
+     */
+    private void handleBackRoomClick(Point gamePoint) {
+        // ✨ Hitbox Kabinet (kanan bawah back room) — dari HitboxConfig
+        if (RenderEngine.hitboxContains(HitboxConfig.CABINET_HITBOX, gamePoint)) {
+            enterCabinet();
             return;
         }
 
-        if (key.equals("CLR")) {
-            currentPinInput = "";
-            keypadDisplayLabel.setText("----");
-            keypadDisplayLabel.setForeground(new Color(150, 200, 255));
-            return;
-        }
-
-        if (key.equals("ENT")) {
-            if (currentPinInput.equals(secretPin)) {
-                keypadDisplayLabel.setText("ACCESS GRANTED");
-                keypadDisplayLabel.setForeground(Color.GREEN);
-                endGame("VICTORY", "Pintu terbuka! Kamu berhasil kabur.", Color.GREEN);
-            } else {
-                keypadDisplayLabel.setText("DENIED");
-                keypadDisplayLabel.setForeground(Color.RED);
-                
-                player.getPower().decreasePower(15); 
-                updateStatusLabel();
-                
-                if (player.getPower().getCurrentPower() <= 0) {
-                    if (hasSecondChance) {
-                        hasSecondChance = false;
-                        player.getPower().addPower(30); 
-                        logEvent("⚠️ [EMERGENCY] Daya habis! Generator darurat menyala (+30% Power).");
-                        JOptionPane.showMessageDialog(this, "Sistem Anjlok!\nGenerator cadangan menyala memberi 30% daya.\nKamu harus melakukan START REPAIR ulang!", "WARNING", JOptionPane.WARNING_MESSAGE);
-                        
-                        keypadPopupPanel.setVisible(false);
-                        isKeypadActive = false;
-                        repairProgress = 0;
-                        repairProgressBar.setValue(0);
-                        btnStartRepair.setText("START REPAIR");
-                        btnStartRepair.setEnabled(true);
-                        btnStartRepair.setForeground(Color.GREEN);
-                        updateStatusLabel();
-                        updateUIVisibility();
-                    } else {
-                        checkWinLoss(); 
-                    }
-                }
-                
-                Timer resetTimer = new Timer(1000, evt -> {
-                    if (!isGameOver && isKeypadActive) {
-                        currentPinInput = "";
-                        keypadDisplayLabel.setText("----");
-                        keypadDisplayLabel.setForeground(new Color(150, 200, 255));
-                    }
-                });
-                resetTimer.setRepeats(false);
-                resetTimer.start();
-            }
-            return;
-        }
-
-        if (currentPinInput.length() < 4 && !keypadDisplayLabel.getText().equals("DENIED")) {
-            currentPinInput += key;
-            com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/button_click.wav"); 
-            StringBuilder display = new StringBuilder(currentPinInput);
-            while (display.length() < 4) display.append("-");
-            keypadDisplayLabel.setText(display.toString());
+        // ✨ Hitbox Pintu Gembok (tengah-kiri back room) — dari HitboxConfig
+        if (RenderEngine.hitboxContains(HitboxConfig.LOCKDOOR_HITBOX, gamePoint)) {
+            logEvent("🔧 [INTERACT] Mendekat ke gembok untuk mencongkel...");
+            lockpickPopupPanel.setVisible(true);
+            lastMouseX = -1;
+            scrubDistance = 0;
+            updateUIVisibility();
         }
     }
 
-    private void updateDoorVisuals() {
-        Enemy leftEnemy = getEnemyAtDoor("LEFT");
-        leftDoorVisual = (leftEnemy != null) ? new ImageIcon(getClass().getResource(getSpritePath(leftEnemy))).getImage() : null;
+    private void enterCabinet() {
+        isHidden = true;
+        isLookingBack = false;
 
-        Enemy rightEnemy = getEnemyAtDoor("RIGHT");
-        rightDoorVisual = (rightEnemy != null) ? new ImageIcon(getClass().getResource(getSpritePath(rightEnemy))).getImage() : null;
+        // Tentukan apakah bersembunyi "lebih awal" (aman) atau telat (QTE)
+        Enemy attacker = getEnemyAtDoor();
+        if (attacker != null) {
+            hidEarly = (attacker.getPatienceTimer() >= 3);
+        } else {
+            hidEarly = true; // Tidak ada musuh = aman
+        }
 
+        AudioManager.playSound("/assets/audio/sfx/door_close.wav");
+        logEvent("🚪 [HIDE] Kamu meringkuk masuk ke kabinet.");
+        updateUIVisibility();
         officePanel.repaint();
     }
 
-    private String getSpritePath(Enemy enemy) {
-        if (enemy instanceof EnemyOdd) return "/assets/enemies/enemy_a.png";
-        if (enemy instanceof EnemyEven) return "/assets/enemies/enemy_b.png";
-        if (enemy instanceof EnemyRandom) return "/assets/enemies/enemy_c.png";
-        return "/assets/enemies/enemy_a.png";
+    private void exitCabinet() {
+        isHidden = false;
+        AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+        logEvent("🚪 Kamu merangkak keluar dari kabinet.");
+        updateUIVisibility();
+        officePanel.repaint();
     }
+
+    // ============================================================
+    // SETUP LOCKPICK UI
+    // ============================================================
+
+    private void setupLockpickUI() {
+        lockpickPopupPanel = new JPanel();
+        lockpickPopupPanel.setBackground(Color.BLACK);
+        lockpickPopupPanel.setLayout(new BorderLayout());
+
+        JPanel scrubAreaPanel = new JPanel() {
+            @Override
+            protected void paintComponent(Graphics g) {
+                super.paintComponent(g);
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setColor(Color.BLACK);
+                g2d.fillRect(0, 0, getWidth(), getHeight());
+
+                // Latar belakang lockpick (menggunakan cangkang)
+                Rectangle bounds = RenderEngine.getGameBounds(getWidth(), getHeight());
+                Image imgLock = AssetCache.get(PATH_LOCK_DOOR);
+                if (imgLock != null) {
+                    g2d.drawImage(imgLock, bounds.x, bounds.y, bounds.width, bounds.height, this);
+                    g2d.setColor(new Color(0, 0, 0, 160));
+                    g2d.fillRect(0, 0, getWidth(), getHeight());
+                }
+
+                // Judul
+                g2d.setColor(Color.WHITE);
+                g2d.setFont(new Font("Consolas", Font.BOLD, 28));
+                String title = "M E N C O N G K E L   G E M B O K";
+                FontMetrics fm = g2d.getFontMetrics();
+                g2d.drawString(title, (getWidth() - fm.stringWidth(title)) / 2, 80);
+
+                g2d.setFont(new Font("Consolas", Font.PLAIN, 22));
+                String sub = "< Hati-hati! Gesek KIRI dan KANAN tapi jangan terlalu kasar! >";
+                fm = g2d.getFontMetrics();
+                g2d.drawString(sub, (getWidth() - fm.stringWidth(sub)) / 2, 130);
+
+                // Bar progres gembok
+                int barW = 80, barSpacing = 20;
+                int startX = (getWidth() - (6 * barW + 5 * barSpacing)) / 2;
+                for (int i = 0; i < 6; i++) {
+                    boolean filled = (i < lockBars);
+                    g2d.setColor(filled ? new Color(0, 255, 0, 200) : new Color(50, 50, 50, 200));
+                    g2d.fillRect(startX + i * (barW + barSpacing), getHeight() - 150, barW, 60);
+                    g2d.setColor(filled ? Color.WHITE : Color.GRAY);
+                    g2d.drawRect(startX + i * (barW + barSpacing), getHeight() - 150, barW, 60);
+                }
+            }
+        };
+
+        scrubAreaPanel.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
+            @Override
+            public void mouseMoved(java.awt.event.MouseEvent e) {
+                if (isGameOver || lockBars >= 6)
+                    return;
+                if (lastMouseX != -1) {
+                    int delta = Math.abs(e.getX() - lastMouseX);
+                    if (delta > 150) {
+                        // Terlalu kasar — lockpick terpeleset
+                        scrubDistance = 0;
+                        lockBars = Math.max(0, lockBars - 2);
+                        logEvent("❌ LOCKPICK TERPELESET! Hilang 2 Bar!");
+                        AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+                        scrubAreaPanel.repaint();
+                    } else {
+                        scrubDistance += delta;
+                        if (scrubDistance > 3500) {
+                            lockBars++;
+                            scrubDistance = 0;
+                            AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+                            scrubAreaPanel.repaint();
+                            if (lockBars >= 6)
+                                handleLockpickSuccess();
+                        }
+                    }
+                }
+                lastMouseX = e.getX();
+            }
+        });
+        lockpickPopupPanel.add(scrubAreaPanel, BorderLayout.CENTER);
+
+        JButton btnClose = new JButton("MENJAUH DARI PINTU [S / ESC]");
+        btnClose.setBackground(Color.DARK_GRAY);
+        btnClose.setForeground(Color.WHITE);
+        btnClose.setFont(new Font("Consolas", Font.BOLD, 20));
+        btnClose.setPreferredSize(new Dimension(getWidth(), 60));
+        btnClose.addActionListener(e -> {
+            lockpickPopupPanel.setVisible(false);
+            updateUIVisibility();
+        });
+        lockpickPopupPanel.add(btnClose, BorderLayout.SOUTH);
+    }
+
+    private void handleLockpickSuccess() {
+        isGameOver = true;
+        gameLoopTimer.stop();
+        if (lockDrainTimer != null)
+            lockDrainTimer.stop();
+
+        logEvent("✅ [VICTORY] Gembok berhasil dirusak! Rantai terlepas...");
+        AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+        officePanel.repaint();
+
+        Timer winDelay = new Timer(2000, evt -> mainFrame.fadeOutToScreen("ENDING"));
+        winDelay.setRepeats(false);
+        winDelay.start();
+    }
+
+    // ============================================================
+    // SISTEM ASET ENEMY
+    // ============================================================
+
+    /**
+     * Load aset QTE untuk enemy tertentu ke-cache.
+     * ✨ FIX: Hina sekarang menggunakan path yang benar.
+     */
+    private boolean loadQteAssets(Enemy enemy) {
+        if (enemy == enemyA) {
+            String base = "/assets/enemies/enemy_a_door/qte-state/";
+            qteBodyImg = AssetCache.get(base + "the-red-one-body.png");
+            qteHandLeftImg = AssetCache.get(base + "the-red-one-left-hand.png");
+            qteHandRightImg = AssetCache.get(base + "the-red-one-right-hand.png");
+        } else if (enemy == enemyB) {
+            String base = "/assets/enemies/enemy_b_vent/qte-state/";
+            qteBodyImg = AssetCache.get(base + "hina_body_qte.png");
+            qteHandLeftImg = AssetCache.get(base + "hina_left_hand_qte.png");
+            qteHandRightImg = AssetCache.get(base + "hina_right_hand_qte.png");
+        } else {
+            return false;
+        }
+        return (qteBodyImg != null && qteHandLeftImg != null && qteHandRightImg != null);
+    }
+
+    /**
+     * Ambil sprite idle enemy.
+     * ✨ FIX: Hina sekarang menggunakan path idle yang benar (bukan QTE body).
+     */
+    private Image getIdleSprite(Enemy enemy) {
+        if (enemy == enemyA) {
+            // The Red One — gunakan phase 1 untuk idle
+            return AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png");
+        } else if (enemy == enemyB) {
+            // ✨ FIX: Path idle Hina yang benar (bukan qte-state!)
+            return AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
+        }
+        return null;
+    }
+
+    private void updateDoorVisuals() {
+        doorEnemyVisual = null;
+        ventEnemyVisual = null;
+        Enemy enemy = getEnemyAtDoor();
+
+        // Enemy A: Tampilkan sprite saat sudah dekat (patience <= 2)
+        if (enemy != null && enemy == enemyA && enemy.getPatienceTimer() <= 2
+                && !isStruggling && !isRetreating) {
+            doorEnemyVisual = getIdleSprite(enemy);
+        }
+        // Enemy B (Hina): All phase rendering handled in paintFrontRoom()
+        officePanel.repaint();
+    }
+
+    // ============================================================
+    // SETUP RESPONSIVE LAYOUT
+    // ============================================================
 
     private void setupResponsiveListener() {
         layeredPane.addComponentListener(new ComponentAdapter() {
@@ -421,127 +742,90 @@ public class GameGUI extends JPanel {
             public void componentResized(ComponentEvent e) {
                 int w = layeredPane.getWidth();
                 int h = layeredPane.getHeight();
+
+                // Panel utama mengisi seluruh layered pane
                 officePanel.setBounds(0, 0, w, h);
                 endScreenPanel.setBounds(0, 0, w, h);
-                
-                int tabW = 924;
-                int tabH = 550;
-                tabletOverlayPanel.setBounds((w - tabW) / 2, (h - tabH) / 2, tabW, tabH);
-                
-                int keyW = 350;
-                int keyH = 500;
-                keypadPopupPanel.setBounds((w - keyW) / 2, (h - keyH) / 2, keyW, keyH);
+                lockpickPopupPanel.setBounds(0, 0, w, h);
 
-                int btnW = 250, btnH = 60, gap = 30;
-                int startX = (w - (3 * btnW + 2 * gap)) / 2; 
-                int posY = h - btnH - 30; 
+                // ✨ Tombol tengah (TUTUP PINTU) — mengikuti posisi di dalam cangkang game
+                int btnW = HitboxConfig.BTN_CENTER_W;
+                int btnH = HitboxConfig.BTN_CENTER_H;
+                int startX = (w - btnW) / 2;
+                int posY = h - btnH - HitboxConfig.BTN_CENTER_MARGIN_BOTTOM;
+                btnDoor.setBounds(startX, posY, btnW, btnH);
 
-                btnLeftDoor.setBounds(startX, posY, btnW, btnH);
-                btnTablet.setBounds(startX + btnW + gap, posY, btnW, btnH);
-                btnRightDoor.setBounds(startX + 2 * (btnW + gap), posY, btnW, btnH);
-
-                int edgeBtnW = 50, edgeBtnH = 150, midY = (h - edgeBtnH) / 2;
-                btnLookLeft.setBounds(10, midY, edgeBtnW, edgeBtnH);
-                btnLookRight.setBounds(w - 60, midY, edgeBtnW, edgeBtnH);
+                // ✨ Tombol Look Left/Right — di tepi kiri/kanan panel
+                int ew = HitboxConfig.BTN_EDGE_W;
+                int eh = HitboxConfig.BTN_EDGE_H;
+                int midY = (h - eh) / 2;
+                btnLookLeft.setBounds(HitboxConfig.BTN_EDGE_MARGIN_SIDE, midY, ew, eh);
+                btnLookRight.setBounds(w - ew - HitboxConfig.BTN_EDGE_MARGIN_SIDE, midY, ew, eh);
             }
         });
     }
 
-    private void setupTabletOverlay() {
-        tabletOverlayPanel = new JPanel();
-        tabletOverlayPanel.setBackground(new Color(10, 20, 10, 230)); 
-        tabletOverlayPanel.setLayout(new GridBagLayout());
-        tabletOverlayPanel.setBorder(BorderFactory.createLineBorder(Color.GREEN, 3));
-
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(20, 20, 20, 20);
-        gbc.gridwidth = GridBagConstraints.REMAINDER;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        JLabel titleLabel = new JLabel("SYSTEM DIAGNOSTIC & REPAIR", SwingConstants.CENTER);
-        titleLabel.setFont(new Font("Consolas", Font.BOLD, 36));
-        titleLabel.setForeground(Color.GREEN);
-        tabletOverlayPanel.add(titleLabel, gbc);
-
-        repairProgressBar = new JProgressBar(0, 100);
-        repairProgressBar.setValue(0);
-        repairProgressBar.setStringPainted(true);
-        repairProgressBar.setFont(new Font("Consolas", Font.BOLD, 24));
-        repairProgressBar.setForeground(Color.GREEN);
-        repairProgressBar.setBackground(Color.DARK_GRAY);
-        repairProgressBar.setPreferredSize(new Dimension(600, 50));
-        tabletOverlayPanel.add(repairProgressBar, gbc);
-
-        btnStartRepair = new JButton("START REPAIR");
-        btnStartRepair.setFont(new Font("Consolas", Font.BOLD, 28));
-        btnStartRepair.setBackground(Color.DARK_GRAY);
-        btnStartRepair.setForeground(Color.GREEN);
-        btnStartRepair.setFocusPainted(false);
-        btnStartRepair.addActionListener(e -> {
-            if (isGameOver || repairProgress >= 100) return;
-            isRepairing = !isRepairing; 
-            btnStartRepair.setText(isRepairing ? "PAUSE REPAIR" : "RESUME REPAIR");
-        });
-        tabletOverlayPanel.add(btnStartRepair, gbc);
-    }
+    // ============================================================
+    // SETUP END SCREEN
+    // ============================================================
 
     private void setupEndScreen() {
         endScreenPanel = new JPanel();
-        endScreenPanel.setBackground(new Color(0, 0, 0, 220)); 
-        endScreenPanel.setLayout(new GridBagLayout()); 
+        endScreenPanel.setBackground(new Color(0, 0, 0, 220));
+        endScreenPanel.setLayout(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.gridwidth = GridBagConstraints.REMAINDER;
-        gbc.insets = new Insets(10, 0, 20, 0); 
-        
+        gbc.insets = new Insets(10, 0, 20, 0);
+
         endTitleLabel = new JLabel("GAME OVER", SwingConstants.CENTER);
         endTitleLabel.setFont(new Font("Consolas", Font.BOLD, 60));
         endScreenPanel.add(endTitleLabel, gbc);
-        
+
         endMessageLabel = new JLabel("Message", SwingConstants.CENTER);
         endMessageLabel.setFont(new Font("Consolas", Font.PLAIN, 20));
         endMessageLabel.setForeground(Color.WHITE);
         endScreenPanel.add(endMessageLabel, gbc);
-        
+
         JPanel btnPanel = new JPanel();
         btnPanel.setOpaque(false);
-        
+
         JButton btnRetry = new JButton("RETRY SHIFT");
         btnRetry.setFont(new Font("Consolas", Font.BOLD, 20));
         btnRetry.setBackground(Color.DARK_GRAY);
         btnRetry.setForeground(Color.GREEN);
         btnRetry.addActionListener(e -> resetGame());
-        
+
         JButton btnMenu = new JButton("MAIN MENU");
         btnMenu.setFont(new Font("Consolas", Font.BOLD, 20));
         btnMenu.setBackground(Color.DARK_GRAY);
         btnMenu.setForeground(Color.WHITE);
         btnMenu.addActionListener(e -> {
-            if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
-            com.ryujinsha.system.AudioManager.stopAllSounds();
+            stopAllTimers();
+            AudioManager.stopAllSounds();
             mainFrame.showScreen("MENU");
         });
 
         btnPanel.add(btnRetry);
-        btnPanel.add(btnMenu); 
-        endScreenPanel.add(btnPanel, gbc); 
+        btnPanel.add(btnMenu);
+        endScreenPanel.add(btnPanel, gbc);
     }
 
-    private void setupFloatingControls() {
-        btnLeftDoor = new PixelButton("🚪 L-Door [OPEN]");
-        btnTablet = new PixelButton("📱 Tablet [OFF]");
-        btnRightDoor = new PixelButton("🚪 R-Door [OPEN]");
-        
-        btnLookLeft = new PixelButton("◀");
-        btnLookRight = new PixelButton("▶");
+    // ============================================================
+    // SETUP FLOATING CONTROLS
+    // ============================================================
 
-        layeredPane.add(btnLeftDoor, JLayeredPane.MODAL_LAYER);
-        layeredPane.add(btnTablet, JLayeredPane.MODAL_LAYER);
-        layeredPane.add(btnRightDoor, JLayeredPane.MODAL_LAYER);
+    private void setupFloatingControls() {
+        btnDoor = new PixelButton("🚪 TUTUP PINTU DEPAN [E]");
+        btnLookLeft = new PixelButton("◀ [A]");
+        btnLookRight = new PixelButton("▶ [D]");
+
+        layeredPane.add(btnDoor, JLayeredPane.MODAL_LAYER);
         layeredPane.add(btnLookLeft, JLayeredPane.MODAL_LAYER);
         layeredPane.add(btnLookRight, JLayeredPane.MODAL_LAYER);
 
         java.awt.event.ActionListener lookAction = e -> {
-            if (isGameOver || player.isTabletOpen() || keypadPopupPanel.isVisible() || isHiddenInLocker) return;
+            if (isGameOver || lockpickPopupPanel.isVisible() || isHidden)
+                return;
             isLookingBack = !isLookingBack;
             updateUIVisibility();
             officePanel.repaint();
@@ -549,261 +833,570 @@ public class GameGUI extends JPanel {
         btnLookLeft.addActionListener(lookAction);
         btnLookRight.addActionListener(lookAction);
 
-        btnTablet.addActionListener(e -> {
-            if (isGameOver || keypadPopupPanel.isVisible() || isHiddenInLocker) return;
-            
-            player.toggleTablet();
-            boolean isTabOpen = player.isTabletOpen();
-            btnTablet.setText("📱 Tablet [" + (isTabOpen ? "ON" : "OFF") + "]");
-            tabletOverlayPanel.setVisible(isTabOpen);
-            
-            updateUIVisibility();
-            
-            if (isTabOpen && !areEnemiesActive) {
-                areEnemiesActive = true;
-                logEvent("⚠️ [WARNING] Sesuatu menyadari kehadiranmu...");
-            }
+        btnDoor.addActionListener(e -> {
+            // ✨ MODIFIKASI: Player tidak bisa kontrol manual lagi sesuai permintaan user.
+            // Biarkan saja method ini kosong atau tampilkan pesan.
+            logEvent("Pintu ini sekarang hanya dikontrol oleh sistem/entitas.");
         });
 
-        btnLeftDoor.addActionListener(e -> {
-            if (isGameOver || isHiddenInLocker) return;
-            player.toggleLeftDoor();
-            btnLeftDoor.setText("🚪 L-Door [" + (player.isLeftDoorClosed() ? "CLOSED" : "OPEN") + "]");
-            com.ryujinsha.system.AudioManager.playSound(player.isLeftDoorClosed() ? "/assets/audio/sfx/door_close.wav" : "/assets/audio/sfx/door_open.wav");
-            updateDoorVisuals(); 
-        });
-
-        btnRightDoor.addActionListener(e -> {
-            if (isGameOver || isHiddenInLocker) return;
-            player.toggleRightDoor();
-            btnRightDoor.setText("🚪 R-Door [" + (player.isRightDoorClosed() ? "CLOSED" : "OPEN") + "]");
-            com.ryujinsha.system.AudioManager.playSound(player.isRightDoorClosed() ? "/assets/audio/sfx/door_close.wav" : "/assets/audio/sfx/door_open.wav");
-            updateDoorVisuals(); 
-        });
-        
         updateUIVisibility();
     }
 
-    private void setupGameLoop() {
-        gameLoopTimer = new Timer(2000, e -> processGameTick());
-        
-        repairTimer = new Timer(100, e -> {
-            if (isGameOver) return;
-            
-            if (player.isTabletOpen() && isRepairing && repairProgress < 100) {
-                repairProgress++; 
-                repairProgressBar.setValue(repairProgress);
-                
-                if (repairProgress >= 100) {
-                    isRepairing = false;
-                    btnStartRepair.setText("SYSTEM REPAIRED");
-                    btnStartRepair.setEnabled(false);
-                    btnStartRepair.setForeground(Color.GRAY);
-                    
-                    isKeypadActive = true; 
-                    logEvent("✅ [SYSTEM] Perbaikan selesai. KEYPAD BELAKANG AKTIF!");
+    // ============================================================
+    // SETUP KEY BINDINGS
+    // ============================================================
+
+    private void setupKeyBindings() {
+        InputMap im = this.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = this.getActionMap();
+
+        // F11 — Toggle fullscreen
+        im.put(KeyStroke.getKeyStroke("F11"), "toggleMaximize");
+        am.put("toggleMaximize", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                JFrame frame = (JFrame) SwingUtilities.getWindowAncestor(GameGUI.this);
+                if (frame != null) {
+                    int state = frame.getExtendedState();
+                    frame.setExtendedState(
+                            state == JFrame.MAXIMIZED_BOTH ? JFrame.NORMAL : JFrame.MAXIMIZED_BOTH);
                 }
+            }
+        });
+
+        // SPACE — Spam struggle
+        im.put(KeyStroke.getKeyStroke("SPACE"), "spamSpace");
+        am.put("spamSpace", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (isStruggling && !isGameOver) {
+                    struggleValue += 15;
+                    if (struggleValue >= 100)
+                        checkStruggleWin();
+                    else {
+                        struggleAnimCounter += 2;
+                        officePanel.repaint();
+                    }
+                }
+            }
+        });
+
+        // A — Lihat kiri / kanan
+        im.put(KeyStroke.getKeyStroke("A"), "lookLeft");
+        am.put("lookLeft", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (btnLookLeft.isVisible() && btnLookLeft.isEnabled())
+                    btnLookLeft.doClick();
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke("D"), "lookRight");
+        am.put("lookRight", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (btnLookRight.isVisible() && btnLookRight.isEnabled())
+                    btnLookRight.doClick();
+            }
+        });
+
+        // E — Toggle pintu depan
+        im.put(KeyStroke.getKeyStroke("E"), "toggleDoor");
+        am.put("toggleDoor", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                // ✨ Player tidak bisa kontrol manual via E lagi.
+            }
+        });
+
+        // W — Mengumpat (masuk kabinet saat di ruang belakang)
+        im.put(KeyStroke.getKeyStroke("W"), "hideCabinet");
+        am.put("hideCabinet", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (isGameOver || !isLookingBack || isHidden || lockpickPopupPanel.isVisible())
+                    return;
+                enterCabinet();
+            }
+        });
+
+        // S — Multi-aksi kontekstual:
+        // • Di ruang belakang (tidak bersembunyi, tidak lockpick) → buka lockpick pintu
+        // • Sedang di layar lockpick → tutup lockpick / mundur
+        // • Sedang bersembunyi (tidak struggle) → keluar kabinet
+        // ESC → selalu mundur / tutup
+        AbstractAction sAction = new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (isGameOver)
+                    return;
+
+                if (lockpickPopupPanel.isVisible()) {
+                    // Tutup lockpick
+                    lockpickPopupPanel.setVisible(false);
+                    updateUIVisibility();
+                    logEvent("🔧 [INTERACT] Kamu mundur dari gembok.");
+                } else if (isHidden && !isStruggling) {
+                    // Keluar kabinet
+                    exitCabinet();
+                } else if (isLookingBack && !isHidden) {
+                    // Buka lockpick pintu belakang
+                    logEvent("🔧 [INTERACT] Mendekat ke gembok untuk mencongkel...");
+                    lockpickPopupPanel.setVisible(true);
+                    lastMouseX = -1;
+                    scrubDistance = 0;
+                    updateUIVisibility();
+                }
+            }
+        };
+        im.put(KeyStroke.getKeyStroke("S"), "sAction");
+        im.put(KeyStroke.getKeyStroke("ESCAPE"), "sAction");
+        am.put("sAction", sAction);
+    }
+
+    // ============================================================
+    // SETUP GAME LOOP
+    // ============================================================
+
+    private void setupGameLoop() {
+        gameLoopTimer = new Timer(1200, e -> processGameTick());
+
+        lockDrainTimer = new Timer(3000, e -> {
+            if (!isGameOver && !lockpickPopupPanel.isVisible() && lockBars > 0) {
+                lockBars--;
+                logEvent("⚠️ [PENALTY] Progres gembok menurun (" + lockBars + "/6 bar).");
             }
         });
     }
 
     private void processGameTick() {
-        if (isGameOver) return;
+        if (isGameOver || isStruggling || isRetreating)
+            return;
 
         if (areEnemiesActive) {
-            enemyA.act(); enemyB.act(); enemyC.act();
-            checkDoorDefense(enemyA); 
-            checkDoorDefense(enemyB); 
-            checkDoorDefense(enemyC);
-            updateDoorVisuals(); 
+            boolean isDoorOccupied = getEnemyAtDoor() != null;
+
+            if (!isDoorOccupied) {
+                enemyA.act();
+                enemyB.act();
+            } else {
+                // Hanya enemy yang sudah di pintu yang countdown
+                if (enemyA.isAtDoor())
+                    enemyA.act();
+                if (enemyB.isAtDoor())
+                    enemyB.act();
+            }
+
+            Enemy attacker = getEnemyAtDoor();
+            if (attacker != null) {
+                checkDoorDefense(attacker);
+                // ✨ Update intensitas vignette berdasarkan sisa waktu (patience)
+                int p = attacker.getPatienceTimer();
+                if (p <= 1) vignetteIntensity = 0.8f;
+                else if (p == 2) vignetteIntensity = 0.5f;
+                else if (p == 3) vignetteIntensity = 0.2f;
+                else vignetteIntensity = 0f;
+            } else {
+                vignetteIntensity = 0f;
+            }
+
+            updateDoorVisuals();
         }
-        
-        updateStatusLabel();
-        checkWinLoss();
     }
+
+    // ============================================================
+    // LOGIKA DEFENSE & SERANGAN ENEMY
+    // ============================================================
 
     private void checkDoorDefense(Enemy enemy) {
-        if (enemy.isAtDoor()) {
-            // Peringatan napas berat
+        if (!enemy.isAtDoor())
+            return;
+
+        // ============================================================
+        // ENEMY A (The Red One) — 3-Phase Flow (unchanged)
+        // ============================================================
+        if (enemy == enemyA) {
             if (enemy.getPatienceTimer() == 3) {
-                if (enemy.getDoorTarget().equals("LEFT")) {
-                    logEvent("🌑 *suara napas berat*... Sesuatu mengintip di pintu KIRI.");
-                } else if (enemy.getDoorTarget().equals("RIGHT")) {
-                    logEvent("🌑 *suara napas berat*... Sesuatu mengintip di pintu KANAN.");
-                }
+                logEvent("🚪 *KREK*... Pintu terbuka di PHASE 1. The Red One terlihat!");
+                player.setLeftDoorClosed(false);
+                AudioManager.playSound("/assets/audio/sfx/door_open.wav");
             }
-            
-            boolean isDefended = (enemy.getDoorTarget().equals("LEFT") && player.isLeftDoorClosed()) ||
-                                 (enemy.getDoorTarget().equals("RIGHT") && player.isRightDoorClosed());
-            
-            if (isDefended) {
-                logEvent("💥 *BAM BAM BAM* " + enemy.getName() + " memukul pintu!");
-                int randomBang = (int)(Math.random() * 3) + 1;
-                com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/door_bang_" + randomBang + ".wav");
-                enemy.retreat(7);
-                updateDoorVisuals(); 
-            } 
-            // ✨ LOGIKA BARU: Cek jika pemain sedang bersembunyi saat hantu menyerang
-            else if (enemy.getPatienceTimer() <= 0) {
-                if (isHiddenInLocker) {
-                    // Pemain selamat karena bersembunyi!
-                    logEvent("👤 [SAFE] " + enemy.getName() + " masuk ke ruangan, tapi tidak menemukanmu...");
-                    
-                    // Putar suara entitas gagal menyerang (misal: geraman atau suara langkah menjauh)
-                    com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
-                    
-                    // Entitas kembali ke titik awal karena gagal
-                    enemy.retreat(10); 
-                    updateDoorVisuals();
+            if (enemy.getPatienceTimer() == 2) {
+                logEvent("💥 Pintu tertutup kembali saat enemy mendekat...");
+                player.setLeftDoorClosed(true);
+                AudioManager.playSound("/assets/audio/sfx/door_close.wav");
+                updateDoorVisuals();
+                hidEarly = isHidden;
+            }
+            if (enemy.getPatienceTimer() <= 0) {
+                if (isHidden) {
+                    if (hidEarly) {
+                        logEvent("👤 [SAFE] Kamu sudah bersembunyi tepat waktu. The Red One pergi.");
+                        AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                        enemy.retreat(10);
+                        updateDoorVisuals();
+                        hidEarly = false;
+                    } else {
+                        initiateJumpscareSequence(enemy);
+                    }
                 } else {
-                    // Pemain tidak bersembunyi dan pintu terbuka -> Jumpscare
-                    triggerJumpscare(enemy);
+                    initiateJumpscareSequence(enemy);
                 }
+            }
+            return;
+        }
+
+        // ============================================================
+        // ENEMY B (Hina) — 4-Phase Flow
+        //   Phase 0 (patience=4): Vent Crawling — sound cue
+        //   Phase 1 (patience=3): Show Up on Vent — partial visibility
+        //   Phase 2 (patience=2): Idle in Front — fully visible
+        //   Phase 3 (patience<=0): Jumpscare trigger
+        // ============================================================
+
+        // Phase 0: Vent Crawling — tension buildup
+        if (enemy.getPatienceTimer() == 4) {
+            logEvent("💨 *suara merangkak*... Ada sesuatu bergerak di dalam ventilasi.");
+            AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav");
+        }
+
+        // Phase 1: Show Up on Vent — partially visible
+        // If player is ALREADY hiding at this point, they're safe (no QTE)
+        if (enemy.getPatienceTimer() == 3) {
+            logEvent("🕷️ Hina muncul sebagian dari lubang ventilasi...");
+            if (isHidden) {
+                hidEarly = true; // Player hid before Idle in Front → safe
+            }
+            updateDoorVisuals();
+        }
+
+        // Phase 2: Idle in Front — fully visible, tension peak
+        if (enemy.getPatienceTimer() == 2) {
+            logEvent("👁️ Hina berdiri di depanmu! Dia menatapmu dari celah ventilasi!");
+            AudioManager.playSound("/assets/audio/sfx/door_close.wav");
+            // Only mark as hidEarly if player was already hiding BEFORE this phase
+            if (isHidden && !hidEarly) {
+                hidEarly = false; // Player hid too late → QTE will trigger
+            }
+            updateDoorVisuals();
+        }
+
+        // Phase 3: Execution (patience <= 0)
+        if (enemy.getPatienceTimer() <= 0) {
+            if (isHidden) {
+                if (hidEarly) {
+                    // Player hid during Phase 1 (Show Up on Vent) → safe, NO QTE
+                    logEvent("👤 [SAFE] Kamu bersembunyi sebelum Hina mendekat. Dia kembali ke vent.");
+                    AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                    enemy.retreat(10);
+                    updateDoorVisuals();
+                    hidEarly = false;
+                } else {
+                    // Player hid during Phase 2 (Idle in Front) → QTE triggers
+                    startStruggle(enemy);
+                }
+            } else {
+                // Player not hiding at all → direct jumpscare
+                initiateJumpscareSequence(enemy);
             }
         }
     }
 
-    private void updateStatusLabel() {
-        String systemStatus = repairProgress >= 100 ? "REPAIRED (Keypad Online)" : "DAMAGED (" + repairProgress + "%)";
-        statusLabel.setText(String.format("Power: %d%% | System: %s", player.getPower().getCurrentPower(), systemStatus));
+    // ============================================================
+    // STRUGGLE QTE SYSTEM
+    // ============================================================
+
+    private void startStruggle(Enemy enemy) {
+        if (isStruggling)
+            return;
+
+        if (!loadQteAssets(enemy)) {
+            logEvent("❌ Gagal load asset QTE untuk " + enemy.getName() + "! Jumpscare paksa.");
+            initiateJumpscareSequence(enemy);
+            return;
+        }
+
+        isStruggling = true;
+        currentAttacker = enemy;
+        struggleValue = 40;
+        struggleAnimCounter = 0;
+
+        logEvent("⚠️ " + enemy.getName() + " MENEMUKANMU DAN MENARIK PINTU KABINET! TAHAN!");
+        AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav");
+
+        doorEnemyVisual = null;
+        ventEnemyVisual = null;
+        officePanel.repaint();
+
+        struggleTimer = new Timer(100, e -> {
+            if (!isStruggling || isGameOver) {
+                ((Timer) e.getSource()).stop();
+                return;
+            }
+            struggleValue -= 5;
+            struggleAnimCounter++;
+
+            if (struggleValue <= 0) {
+                ((Timer) e.getSource()).stop();
+                isStruggling = false;
+                isHidden = false;
+                triggerJumpscare(currentAttacker);
+                return;
+            }
+            officePanel.repaint();
+        });
+        struggleTimer.start();
     }
 
-    private void checkWinLoss() {
-        if (player.getPower().isPowerEmpty()) {
-            triggerJumpscare(enemyC, true);
+    private void checkStruggleWin() {
+        if (isStruggling && struggleValue >= 100) {
+            if (struggleTimer != null)
+                struggleTimer.stop();
+            isStruggling = false;
+            struggleValue = 100;
+            logEvent("👤 [SAFE] Kamu berhasil menahan pintunya! " +
+                    currentAttacker.getName() + " menyerah dan pergi.");
+            AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+
+            // ✨ Start Retreat Animation
+            startRetreatAnimation(currentAttacker);
+
+            hidEarly = false;
+            updateDoorVisuals();
+            officePanel.repaint();
         }
     }
 
-    private void triggerJumpscare(Enemy enemy) {
-        triggerJumpscare(enemy, false);
+    // ============================================================
+    // RETREAT ANIMATION SYSTEM
+    // ============================================================
+
+    private void startRetreatAnimation(Enemy enemy) {
+        if (isRetreating)
+            return;
+
+        this.lastDefeatedEnemy = enemy;
+        this.isRetreating = true;
+        this.retreatAnimTicks = 0;
+
+        // Use the standard idle sprite for retreat (idle_failed removed)
+        this.retreatImg = getIdleSprite(enemy);
+
+        if (retreatTimer != null && retreatTimer.isRunning())
+            retreatTimer.stop();
+
+        retreatTimer = new Timer(50, e -> {
+            retreatAnimTicks++;
+            if (retreatAnimTicks >= HitboxConfig.RETREAT_DURATION_TICKS) {
+                ((Timer) e.getSource()).stop();
+                finishRetreat();
+            }
+            officePanel.repaint();
+        });
+        retreatTimer.start();
     }
 
-    private void triggerJumpscare(Enemy enemy, boolean withDelay) {
-        if (isGameOver) return;
+    private void finishRetreat() {
+        if (lastDefeatedEnemy != null) {
+            lastDefeatedEnemy.retreat(10);
+        }
+        isRetreating = false;
+        lastDefeatedEnemy = null;
+        retreatImg = null;
+        updateDoorVisuals();
+        officePanel.repaint();
+    }
+
+    // ============================================================
+    // JUMPSCARE SYSTEM
+    // ============================================================
+
+    private void initiateJumpscareSequence(Enemy enemy) {
+        if (isGameOver)
+            return;
         isGameOver = true;
-        gameLoopTimer.stop(); 
-        tabletOverlayPanel.setVisible(false);
-        keypadPopupPanel.setVisible(false);
-        
-        btnTablet.setVisible(false);
-        btnLeftDoor.setVisible(false);
-        btnRightDoor.setVisible(false);
+        gameLoopTimer.stop();
+        if (lockDrainTimer != null)
+            lockDrainTimer.stop();
+        lockpickPopupPanel.setVisible(false);
+
+        btnDoor.setVisible(false);
         btnLookLeft.setVisible(false);
         btnLookRight.setVisible(false);
 
-        com.ryujinsha.system.AudioManager.stopAllSounds();
-
-        if (withDelay) {
-            Timer suspenseTimer = new Timer(3000, e -> executeJumpscareVisuals(enemy));
-            suspenseTimer.setRepeats(false);
-            suspenseTimer.start();
+        if (player.isLeftDoorClosed()) {
+            logEvent("💥 *BAM!* Pintu depan didobrak paksa!");
+            player.toggleLeftDoor();
+            AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav");
         } else {
-            executeJumpscareVisuals(enemy);
+            AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav");
         }
+
+        updateDoorVisuals();
+        officePanel.repaint();
+
+        Timer peekTimer = new Timer(1000, e -> triggerJumpscare(enemy));
+        peekTimer.setRepeats(false);
+        peekTimer.start();
     }
 
-    private void executeJumpscareVisuals(Enemy enemy) {
-        com.ryujinsha.system.AudioManager.playSound("/assets/audio/sfx/jumpscare_scream.wav");
-        String imagePath = enemy.getJumpscarePath();
-        
+    private void triggerJumpscare(Enemy enemy) {
+        doorEnemyVisual = null;
+        ventEnemyVisual = null;
+        officePanel.repaint();
+
+        AudioManager.stopAllSounds();
+        AudioManager.playSound("/assets/audio/sfx/jumpscare_scream.wav");
+
+        // Pilih path GIF jumpscare berdasarkan enemy
+        String imagePath;
+        if (enemy == enemyA) {
+            imagePath = "/assets/enemies/enemy_a_door/jumpscare/the-red-jumpscare.gif";
+        } else {
+            imagePath = "/assets/enemies/enemy_b_vent/jumpscare/hina_jumpscare.png";
+        }
+
         JPanel jumpscarePanel = new JPanel() {
-            private Image jsImage;
+            private final Image jsImage;
             {
-                setOpaque(false); 
+                setOpaque(false);
                 URL imgUrl = getClass().getResource(imagePath);
-                if (imgUrl != null) jsImage = new ImageIcon(imgUrl).getImage();
+                jsImage = (imgUrl != null) ? new javax.swing.ImageIcon(imgUrl).getImage() : null;
             }
+
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                if (jsImage != null) g.drawImage(jsImage, 0, 0, getWidth(), getHeight(), this);
+                if (jsImage != null) {
+                    Rectangle b = RenderEngine.getGameBounds(getWidth(), getHeight());
+                    g.drawImage(jsImage, b.x, b.y, b.width, b.height, this);
+                }
             }
         };
-        
+
         jumpscarePanel.setBounds(0, 0, layeredPane.getWidth(), layeredPane.getHeight());
-        layeredPane.add(jumpscarePanel, JLayeredPane.MODAL_LAYER);
+        layeredPane.add(jumpscarePanel, JLayeredPane.DRAG_LAYER); // ✨ Ganti ke DRAG_LAYER agar paling atas
         layeredPane.revalidate();
         layeredPane.repaint();
 
-        Timer delayTimer = new Timer(1500, e -> {
-            layeredPane.remove(jumpscarePanel); 
+        Timer delayTimer = new Timer(1200, e -> {
+            layeredPane.remove(jumpscarePanel);
+            layeredPane.revalidate();
+            layeredPane.repaint();
             endGame("GAME OVER", "Kamu diterkam oleh " + enemy.getName(), Color.RED, enemy);
         });
-        delayTimer.setRepeats(false); 
+        delayTimer.setRepeats(false);
         delayTimer.start();
     }
 
-    private void endGame(String title, String msg, Color titleColor) {
-        endGame(title, msg, titleColor, null);
-    }
+    // ============================================================
+    // END GAME
+    // ============================================================
 
     private void endGame(String title, String msg, Color titleColor, Enemy killer) {
-        if (!isGameOver) isGameOver = true; 
+        if (!isGameOver)
+            isGameOver = true;
         gameLoopTimer.stop();
-        keypadPopupPanel.setVisible(false); 
-        
+        if (lockDrainTimer != null)
+            lockDrainTimer.stop();
+        lockpickPopupPanel.setVisible(false);
+
         endTitleLabel.setText(title);
         endTitleLabel.setForeground(titleColor);
         endMessageLabel.setText(msg);
-        
+
         endScreenPanel.setBounds(0, 0, layeredPane.getWidth(), layeredPane.getHeight());
-        endScreenPanel.setVisible(true); 
-        
+        endScreenPanel.setVisible(true);
         endScreenPanel.revalidate();
         endScreenPanel.repaint();
 
         if (killer != null && killer.getQuotePath() != null) {
-            quoteTimer = new Timer(1500, e -> com.ryujinsha.system.AudioManager.playSound(killer.getQuotePath()));
+            quoteTimer = new Timer(1500, e -> AudioManager.playSound(killer.getQuotePath()));
             quoteTimer.setRepeats(false);
             quoteTimer.start();
         }
     }
 
+    // ============================================================
+    // RESET GAME
+    // ============================================================
+
     private void resetGame() {
-        if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
-        
-        if (repairProgressBar != null) repairProgressBar.setValue(0);
-        if (btnStartRepair != null) {
-            btnStartRepair.setText("START REPAIR");
-            btnStartRepair.setEnabled(true);
-            btnStartRepair.setForeground(Color.GREEN);
-        }
-        com.ryujinsha.system.AudioManager.stopAllSounds();
+        stopAllTimers();
+        AudioManager.stopAllSounds();
 
         initGameData();
         endScreenPanel.setVisible(false);
-        tabletOverlayPanel.setVisible(false);
-        keypadPopupPanel.setVisible(false);
-        leftDoorVisual = null;
-        rightDoorVisual = null;
-        
-        currentPinInput = "";
-        keypadDisplayLabel.setText("----");
-        keypadDisplayLabel.setForeground(new Color(150, 200, 255));
+        lockpickPopupPanel.setVisible(false);
+
+        btnDoor.setVisible(true);
+        btnLookLeft.setVisible(true);
+        btnLookRight.setVisible(true);
+        btnDoor.setText("🚪 TUTUP PINTU DEPAN [E]");
+
+        statusLabel.setText(
+                "Objective: Bobol rantai pintu belakang sebelum mereka menangkapmu. (F11 = Maximize)");
+        statusLabel.setForeground(Color.YELLOW);
 
         updateDoorVisuals();
-        updateStatusLabel();
         updateUIVisibility();
-        
         gameLoopTimer.start();
-        if (repairTimer != null) repairTimer.start(); 
+        if (lockDrainTimer != null)
+            lockDrainTimer.start();
     }
+
+    /** Hentikan semua timer secara aman (cegah timer leak). */
+    private void stopAllTimers() {
+        if (quoteTimer != null && quoteTimer.isRunning())
+            quoteTimer.stop();
+        if (struggleTimer != null && struggleTimer.isRunning())
+            struggleTimer.stop();
+        if (lockDrainTimer != null && lockDrainTimer.isRunning())
+            lockDrainTimer.stop();
+        if (gameLoopTimer != null && gameLoopTimer.isRunning())
+            gameLoopTimer.stop();
+    }
+
+    // ============================================================
+    // UTILITY
+    // ============================================================
 
     public void startGame() {
-        updateStatusLabel();
+        this.requestFocusInWindow();
         updateUIVisibility();
         gameLoopTimer.start();
-        if (repairTimer != null) repairTimer.start(); 
+        if (lockDrainTimer != null)
+            lockDrainTimer.start();
     }
 
-    private Enemy getEnemyAtDoor(String doorTarget) {
-        if (enemyA.isAtDoor() && enemyA.getDoorTarget().equals(doorTarget)) return enemyA;
-        if (enemyB.isAtDoor() && enemyB.getDoorTarget().equals(doorTarget)) return enemyB;
-        if (enemyC.isAtDoor() && enemyC.getDoorTarget().equals(doorTarget)) return enemyC;
-        return null; 
+    private void updateUIVisibility() {
+        if (isGameOver)
+            return;
+        boolean isLockpickOpen = lockpickPopupPanel.isVisible();
+        boolean isFront = !isLookingBack;
+
+        btnDoor.setVisible(false); // ✨ Selalu false sesuai permintaan (player tidak kontrol pintu)
+        btnLookLeft.setVisible(!isLockpickOpen && !isHidden);
+        btnLookRight.setVisible(!isLockpickOpen && !isHidden);
+    }
+
+    private Enemy getEnemyAtDoor() {
+        if (enemyA.isAtDoor())
+            return enemyA;
+        if (enemyB.isAtDoor())
+            return enemyB;
+        return null;
     }
 
     private void logEvent(String message) {
-        System.out.println(message); 
+        System.out.println(message);
+    }
+
+    @Override
+    public void stopAllProcesses() {
+        if (gameLoopTimer != null && gameLoopTimer.isRunning()) gameLoopTimer.stop();
+        if (lockDrainTimer != null && lockDrainTimer.isRunning()) lockDrainTimer.stop();
+        if (retreatTimer != null && retreatTimer.isRunning()) retreatTimer.stop();
+        if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
     }
 }

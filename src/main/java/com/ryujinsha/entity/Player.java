@@ -21,7 +21,8 @@ public class Player extends Entity {
         
         // Semua mati/terbuka di awal
         this.isTabletOpen = false;
-        this.isLeftDoorClosed = false;
+        // Pintu depan tertutup di awal sesuai permintaan
+        this.isLeftDoorClosed = true;
         this.isRightDoorClosed = false;
         this.isLeftLightOn = false;
         this.isRightLightOn = false;
@@ -61,6 +62,10 @@ public class Player extends Entity {
     public void toggleRightLight() {
         this.isRightLightOn = !this.isRightLightOn;
         System.out.println("[PLAYER] Right Light is " + (isRightLightOn ? "ON" : "OFF"));
+    }
+
+    public void setLeftDoorClosed(boolean closed) {
+        this.isLeftDoorClosed = closed;
     }
 
 
