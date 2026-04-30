@@ -23,7 +23,9 @@ public class CutsceneGUI extends JPanel implements ResourceManaged {
     private boolean isTextFinished = false;
 
     private int playerX = -50; 
-    private int playerY = 220;
+    private int playerY = 240; // ✨ Di tengah-tengah antara 160 (terlalu atas) dan 320 (terlalu bawah)
+    private int bobOffset = 0;
+    private int animTicks = 0;
     private Image currentPlayerImg;
     private Image imgFront, imgBack, imgLeft, imgRight;
     private Image bgRoad1, bgRoad2, currentBg;
@@ -31,7 +33,7 @@ public class CutsceneGUI extends JPanel implements ResourceManaged {
     private Timer animationTimer;
     private int animPhase = 0; 
     private PixelButton btnOpenDoor; 
-    private PixelButton btnSkip; // ✨ TOMBOL SKIP BARU
+    private PixelButton btnSkip; 
     private boolean[] dialogueTriggered = new boolean[5]; 
 
     public CutsceneGUI(MainFrame mainFrame) {
@@ -55,9 +57,8 @@ public class CutsceneGUI extends JPanel implements ResourceManaged {
                     g2d.drawImage(currentBg, 0, 0, getWidth(), getHeight(), this);
                 }
                 if (currentPlayerImg != null) {
-                    // Skala posisi player relatif terhadap ukuran panel jika perlu, 
-                    // namun untuk saat ini kita gunakan koordinat absolut untuk kompatibilitas animasi.
-                    g2d.drawImage(currentPlayerImg, playerX, playerY, 64, 64, this);
+                    // ✨ Tambahkan bobOffset untuk efek berjalan
+                    g2d.drawImage(currentPlayerImg, playerX, playerY + bobOffset, 64, 64, this);
                 }
             }
         };
@@ -109,7 +110,7 @@ public class CutsceneGUI extends JPanel implements ResourceManaged {
         setupInteraction();
 
         currentBg = bgRoad1;
-        setDialogue("Tahun 2026...\nMereka bilang ini hanya pekerjaan mudah.");
+        // Pindahkan dialog pertama agar lebih sinkron dengan visual
         animationTimer.start();
     }
 
@@ -124,46 +125,73 @@ public class CutsceneGUI extends JPanel implements ResourceManaged {
     }
 
     private void updateAnimation() {
+        int w = animPanel.getWidth();
+        int h = animPanel.getHeight();
+        if (w == 0 || h == 0) return; // Tunggu sampai panel memiliki ukuran
+
+        animTicks++;
+        bobOffset = (int) (Math.sin(animTicks * 0.3) * 4); // Efek memantul saat berjalan
+
+        // Koordinat proporsional berdasarkan persentase layar
+        int road1Y = (int)(h * 0.48);
+        int road1TurnX = (int)(w * 0.88);
+        
+        int road2Vert1X = (int)(w * 0.42);
+        int road2HorizY = (int)(h * 0.30);
+        int road2Vert2X = (int)(w * 0.88);
+        int speed = 3; // Sedikit lebih cepat untuk layar lebar
+
         if (animPhase == 0) {
-            playerX += 2;
+            playerY = road1Y; // Selalu kunci di tengah jalan horizontal
+            playerX += speed;
             currentPlayerImg = imgRight;
-            if (playerX == 400 && !dialogueTriggered[0]) {
-                setDialogue("Rumah tua megah yang selalu jadi perbincangan warga...\nKatanya sudah kosong belasan tahun.");
+            if (playerX >= (w * 0.3) && !dialogueTriggered[0]) {
+                setDialogue("Tahun 2026...\nMereka bilang ini hanya pekerjaan mudah.");
                 dialogueTriggered[0] = true;
             }
-            if (playerX >= 1150) animPhase = 1;
+            if (playerX >= road1TurnX) animPhase = 1;
         } else if (animPhase == 1) {
-            playerY += 2;
+            playerX = road1TurnX; // Kunci X saat turun
+            playerY += speed;
             currentPlayerImg = imgFront;
-            if (playerY >= 550) {
-                animPhase = 2; currentBg = bgRoad2;
-                playerX = 550; playerY = 550; 
+            if (playerY >= h) {
+                animPhase = 2; 
+                currentBg = bgRoad2;
+                playerX = road2Vert1X; 
+                playerY = h; // Mulai dari bawah layar
             }
         } else if (animPhase == 2) {
-            playerY -= 2;
+            playerX = road2Vert1X; // Kunci X saat naik
+            playerY -= speed;
             currentPlayerImg = imgBack;
-            if (playerY == 400 && !dialogueTriggered[1]) {
-                setDialogue("Pantas saja tidak ada yang berani mendekat.\nUdaranya terasa... sangat tidak wajar.");
+            if (playerY <= (h * 0.6) && !dialogueTriggered[1]) {
+                setDialogue("Rumah tua megah yang selalu jadi perbincangan warga...\nKatanya sudah kosong belasan tahun.");
                 dialogueTriggered[1] = true;
             }
-            if (playerY <= 250) animPhase = 3;
+            if (playerY <= road2HorizY) animPhase = 3; 
         } else if (animPhase == 3) {
-            playerX += 2;
+            playerY = road2HorizY; // Kunci Y saat ke kanan
+            playerX += speed;
             currentPlayerImg = imgRight;
-            if (playerX >= 1150) animPhase = 4;
-        } else if (animPhase == 4) {
-            playerY -= 2;
-            currentPlayerImg = imgBack;
-            if (playerY == 100 && !dialogueTriggered[2]) {
-                setDialogue("Baiklah. Mari kita selesaikan shift malam ini.");
+            if (playerX >= (w * 0.6) && !dialogueTriggered[2]) {
+                setDialogue("Pantas saja tidak ada yang berani mendekat.\nUdaranya terasa... sangat tidak wajar.");
                 dialogueTriggered[2] = true;
+            }
+            if (playerX >= road2Vert2X) animPhase = 4;
+        } else if (animPhase == 4) {
+            playerX = road2Vert2X; // Kunci X saat naik
+            playerY -= speed;
+            currentPlayerImg = imgBack;
+            if (playerY <= (h * 0.2) && !dialogueTriggered[3]) {
+                setDialogue("Baiklah. Mari kita selesaikan shift malam ini.");
+                dialogueTriggered[3] = true;
             }
             if (playerY <= -50) { 
                 currentPlayerImg = null; 
                 animPhase = 5;
                 animationTimer.stop();
                 btnOpenDoor.setVisible(true); 
-                btnSkip.setVisible(false); // Sembunyikan tombol skip saat tombol pintu muncul
+                btnSkip.setVisible(false); 
             }
         }
     }

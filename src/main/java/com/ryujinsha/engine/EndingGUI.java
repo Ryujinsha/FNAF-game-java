@@ -9,10 +9,11 @@ import java.awt.*;
 public class EndingGUI extends JPanel implements ResourceManaged {
     private MainFrame mainFrame;
     private JLayeredPane layeredPane;
+    private JPanel animPanel;
     
     // Posisi awal karakter (Lari dari kiri luar layar)
     private int playerX = -100;
-    private int playerY = 380; // Disesuaikan agar kaki menapak di jalan
+    private int playerY = 380; 
     private Timer animationTimer;
     private int animPhase = 0;
     
@@ -37,7 +38,7 @@ public class EndingGUI extends JPanel implements ResourceManaged {
         add(layeredPane, BorderLayout.CENTER);
 
         // Panel Animasi (Render Gambar)
-        JPanel animPanel = new JPanel() {
+        animPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -46,23 +47,29 @@ public class EndingGUI extends JPanel implements ResourceManaged {
                 // Mencegah blur saat scaling
                 g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 
+                int w = getWidth();
+                int h = getHeight();
+
                 // Gambar Latar (Malam / Jalanan)
                 g2d.setColor(new Color(15, 15, 25));
-                g2d.fillRect(0, 0, getWidth(), getHeight());
+                g2d.fillRect(0, 0, w, h);
                 
-                // Gambar Jalan / Tanah
+                // Gambar Jalan / Tanah (setengah layar ke bawah)
+                int roadY = (int) (h * 0.5);
                 g2d.setColor(Color.DARK_GRAY);
-                g2d.fillRect(0, 450, getWidth(), getHeight() - 450);
+                g2d.fillRect(0, roadY, w, h - roadY);
 
                 // ✨ GAMBAR KARAKTER BERLARI (Aset Gambar)
                 if ((animPhase == 0 || animPhase == 1) && runFrames != null && runFrames.length > 0) {
-                    // Gambar frame saat ini dengan ukuran dperbesar (misal 96x96 agar terlihat)
+                    // Update playerY agar selalu di atas jalan
+                    playerY = roadY - 90;
                     g2d.drawImage(runFrames[currentFrame], playerX, playerY, 96, 96, this);
                 }
             }
         };
-        animPanel.setBounds(0, 0, 1300, 900);
         layeredPane.add(animPanel, JLayeredPane.DEFAULT_LAYER);
+
+        setupResponsiveListener();
 
         // Setup Teks & Tombol (Sama seperti sebelumnya)
         setupVictoryUI();
@@ -79,7 +86,7 @@ public class EndingGUI extends JPanel implements ResourceManaged {
                     currentFrame = (currentFrame + 1) % runFrames.length; // Ganti ke frame berikutnya
                 }
 
-                if (playerX > 1400) { // Karakter keluar layar
+                if (animPanel.getWidth() > 0 && playerX > animPanel.getWidth() + 100) { // Karakter keluar layar dinamis
                     animPhase = 1;
                 }
             } else if (animPhase == 1) {
@@ -125,21 +132,41 @@ public class EndingGUI extends JPanel implements ResourceManaged {
         textLabel = new JLabel("KAMU BEBAS.", SwingConstants.CENTER);
         textLabel.setFont(new Font("Consolas", Font.BOLD, 70)); // Font diperbesar
         textLabel.setForeground(Color.WHITE);
-        textLabel.setBounds(0, 200, 1300, 100);
         textLabel.setVisible(false);
         layeredPane.add(textLabel, JLayeredPane.PALETTE_LAYER);
 
         btnRetry = new PixelButton("RETRY SHIFT");
-        btnRetry.setBounds(400, 600, 200, 60);
         btnRetry.setVisible(false);
         btnRetry.addActionListener(e -> mainFrame.showScreen("GAME"));
 
         btnMenu = new PixelButton("MAIN MENU");
-        btnMenu.setBounds(700, 600, 200, 60);
         btnMenu.setVisible(false);
         btnMenu.addActionListener(e -> mainFrame.showScreen("MENU"));
 
         layeredPane.add(btnRetry, JLayeredPane.PALETTE_LAYER);
         layeredPane.add(btnMenu, JLayeredPane.PALETTE_LAYER);
+    }
+
+    private void setupResponsiveListener() {
+        this.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                int w = getWidth();
+                int h = getHeight();
+                
+                layeredPane.setBounds(0, 0, w, h);
+                if (animPanel != null) animPanel.setBounds(0, 0, w, h);
+                
+                if (textLabel != null) {
+                    textLabel.setBounds(0, (int)(h * 0.2), w, 100);
+                }
+                if (btnRetry != null) {
+                    btnRetry.setBounds((w / 2) - 220, (int)(h * 0.6), 200, 60);
+                }
+                if (btnMenu != null) {
+                    btnMenu.setBounds((w / 2) + 20, (int)(h * 0.6), 200, 60);
+                }
+            }
+        });
     }
 }
