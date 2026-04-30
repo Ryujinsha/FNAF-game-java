@@ -24,6 +24,9 @@ public class MainFrame extends JFrame {
     private float fadeAlpha = 0f;
     private Timer fadeTimer;
 
+    // ✨ BARU: Global Developer Mode flag
+    public static boolean isDevMode = false;
+
     private void preloadAssets() {
         // ✨ PRELOAD: Muat aset penting di awal agar gameplay lancar
         com.ryujinsha.system.AssetCache.preload(

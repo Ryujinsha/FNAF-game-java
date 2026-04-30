@@ -1,23 +1,20 @@
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\CutsceneGUI.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\entity\EnemyEven.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\GameGUI.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\MainFrame.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\AudioManager.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\GameEngine.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\entity\Entity.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\SanitySystem.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\Main.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\PixelButton.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\entity\Player.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\AssetCache.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\EndingGUI.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\HitboxConfig.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\ImageLoader.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\entity\EnemyOdd.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\PowerSystem.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\TimeSystem.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\MainMenuGUI.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\engine\RenderEngine.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\entity\Enemy.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\system\RNGManager.java
-C:\Users\Nekor\Documents\New folder\Project\night-shift-game\src\main\java\com\ryujinsha\entity\EnemyRandom.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/entity/EnemyEven.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/entity/Player.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/system/ResourceManaged.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/MainFrame.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/entity/Enemy.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/entity/EnemyOdd.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/EndingGUI.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/entity/Entity.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/system/AudioManager.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/GameGUI.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/Main.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/system/PowerSystem.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/system/RNGManager.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/MainMenuGUI.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/RenderEngine.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/system/AssetCache.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/system/SanitySystem.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/PixelButton.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/CutsceneGUI.java
+/mnt/Other/Code/FNAF-game-java/src/main/java/com/ryujinsha/engine/HitboxConfig.java

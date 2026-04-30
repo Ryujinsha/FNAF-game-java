@@ -92,6 +92,12 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private Timer quoteTimer;
     private boolean isLookingBack = false;
     private float vignetteIntensity = 0f; // ✨ BARU: Intensitas efek vignette
+    private boolean isFlickering = false; // ✨ BARU: Status lampu mati-nyala
+    private float flickerAlpha = 0f;      // ✨ BARU: Opacity overlay hitam saat flicker
+    private Timer flickerTimer;           // ✨ BARU: Timer untuk kontrol flicker
+    private boolean hasFlickeredForPhase2 = false; // ✨ BARU: Flag agar flicker hanya 1x per approach
+    private boolean hasFlickeredForEnemyA = false; // ✨ BARU: Flag agar flicker hanya 1x per approach (The Red One)
+    private java.util.List<String> devLogs = new java.util.ArrayList<>(); // ✨ BARU: Cache log untuk Dev Mode
 
     // Path konstanta aset ruangan
     private static final String PATH_FRONT_ROOM = "/assets/rooms/front_room.png";
@@ -144,6 +150,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
         this.ventEnemyVisual = null;
         this.hidEarly = false;
         this.struggleAnimCounter = 0;
+        this.isFlickering = false;
+        this.flickerAlpha = 0f;
+        this.hasFlickeredForPhase2 = false;
+        this.hasFlickeredForEnemyA = false;
 
         // Reset retreat state
         this.isRetreating = false;
@@ -241,9 +251,20 @@ public class GameGUI extends JPanel implements ResourceManaged {
             paintVignette(g2d, pw, ph);
         }
 
+        // ✨ BARU: Render overlay flicker lampu
+        if (isFlickering) {
+            g2d.setColor(new Color(0, 0, 0, (int) (flickerAlpha * 255)));
+            g2d.fillRect(0, 0, pw, ph);
+        }
+
         // ✨ BARU: Render overlay animasi retreat (saat musuh kabur)
         if (isRetreating) {
             paintRetreatOverlay(g2d, bounds);
+        }
+
+        // ✨ BARU: Render log developer di pojok kiri atas
+        if (MainFrame.isDevMode) {
+            paintDevLogs(g2d);
         }
     }
 
@@ -261,7 +282,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
         }
 
         // 2. Render Enemy A (The Red One - Pintu Depan)
-        if (doorEnemyVisual != null && !player.isLeftDoorClosed()) {
+        // ✨ MODIFIKASI: Hanya muncul JIKA tidak sedang flicker
+        if (doorEnemyVisual != null && !player.isLeftDoorClosed() && !isFlickering) {
             RenderEngine.drawSprite(g2d, doorEnemyVisual, bounds,
                     HitboxConfig.ENEMY_A_SPRITE_X, HitboxConfig.ENEMY_A_SPRITE_Y,
                     HitboxConfig.ENEMY_A_SPRITE_W, HitboxConfig.ENEMY_A_SPRITE_H,
@@ -270,7 +292,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
         // 3. Render Enemy B Phase 2: Idle in Front (patience <= 2)
         // Hina fully visible, standing in front of the player
-        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() <= 2 && !isStruggling && !isRetreating) {
+        // ✨ MODIFIKASI: Hanya muncul solid JIKA flicker sudah selesai
+        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() <= 2 && !isStruggling && !isRetreating && !isFlickering) {
             Image hinaImg = getIdleSprite(enemyB);
             if (hinaImg != null) {
                 RenderEngine.drawSprite(g2d, hinaImg, bounds,
@@ -470,6 +493,23 @@ public class GameGUI extends JPanel implements ResourceManaged {
         );
         g2d.setPaint(rgp);
         g2d.fillRect(0, 0, w, h);
+    }
+
+    /**
+     * Render log kejadian secara real-time untuk Developer Mode.
+     */
+    private void paintDevLogs(Graphics2D g2d) {
+        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
+        int y = 30;
+        for (String log : devLogs) {
+            // Shadow
+            g2d.setColor(new Color(0, 0, 0, 150));
+            g2d.drawString(log, 22, y + 2);
+            // Text
+            g2d.setColor(Color.CYAN);
+            g2d.drawString(log, 20, y);
+            y += 20;
+        }
     }
 
     // ============================================================
@@ -723,8 +763,9 @@ public class GameGUI extends JPanel implements ResourceManaged {
         ventEnemyVisual = null;
         Enemy enemy = getEnemyAtDoor();
 
-        // Enemy A: Tampilkan sprite saat sudah dekat (patience <= 2)
-        if (enemy != null && enemy == enemyA && enemy.getPatienceTimer() <= 2
+        // Enemy A: Tampilkan sprite saat sudah dekat (patience <= 3)
+        // ✨ FIX: Diubah dari <= 2 ke <= 3 agar terlihat saat pintu terbuka
+        if (enemy != null && enemy == enemyA && enemy.getPatienceTimer() <= 3
                 && !isStruggling && !isRetreating) {
             doorEnemyVisual = getIdleSprite(enemy);
         }
@@ -974,18 +1015,15 @@ public class GameGUI extends JPanel implements ResourceManaged {
             return;
 
         if (areEnemiesActive) {
-            boolean isDoorOccupied = getEnemyAtDoor() != null;
-
-            if (!isDoorOccupied) {
+            // ✨ MODIFIKASI: Logika "Satu Per Satu" — Musuh hanya bisa maju jika pintu kosong.
+            // Jika sudah di pintu, mereka tetap act() untuk countdown.
+            if (enemyA.isAtDoor() || getEnemyAtDoor() == null) {
                 enemyA.act();
-                enemyB.act();
-            } else {
-                // Hanya enemy yang sudah di pintu yang countdown
-                if (enemyA.isAtDoor())
-                    enemyA.act();
-                if (enemyB.isAtDoor())
-                    enemyB.act();
             }
+            if (enemyB.isAtDoor() || getEnemyAtDoor() == null) {
+                enemyB.act();
+            }
+            // (Jika sudah ada musuh di pintu, act() di atas tidak dipanggil kecuali untuk countdown di bawah)
 
             Enemy attacker = getEnemyAtDoor();
             if (attacker != null) {
@@ -1017,9 +1055,18 @@ public class GameGUI extends JPanel implements ResourceManaged {
         // ============================================================
         if (enemy == enemyA) {
             if (enemy.getPatienceTimer() == 3) {
-                logEvent("🚪 *KREK*... Pintu terbuka di PHASE 1. The Red One terlihat!");
-                player.setLeftDoorClosed(false);
-                AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+                // ✨ BARU: Trigger flicker sebelum pintu terbuka
+                if (!hasFlickeredForEnemyA) {
+                    startFlickerEffect();
+                    hasFlickeredForEnemyA = true;
+                }
+
+                // Pintu hanya terbuka setelah flicker (untuk efek dramatis)
+                if (!isFlickering && player.isLeftDoorClosed()) {
+                    logEvent("🚪 *KREK*... Pintu terbuka di PHASE 1. The Red One terlihat!");
+                    player.setLeftDoorClosed(false);
+                    AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+                }
             }
             if (enemy.getPatienceTimer() == 2) {
                 logEvent("💥 Pintu tertutup kembali saat enemy mendekat...");
@@ -1072,6 +1119,12 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
         // Phase 2: Idle in Front — fully visible, tension peak
         if (enemy.getPatienceTimer() == 2) {
+            // ✨ BARU: Trigger efek flicker lampu sebelum muncul solid
+            if (!hasFlickeredForPhase2) {
+                startFlickerEffect();
+                hasFlickeredForPhase2 = true;
+            }
+
             logEvent("👁️ Hina berdiri di depanmu! Dia menatapmu dari celah ventilasi!");
             AudioManager.playSound("/assets/audio/sfx/door_close.wav");
             // Only mark as hidEarly if player was already hiding BEFORE this phase
@@ -1100,6 +1153,41 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 initiateJumpscareSequence(enemy);
             }
         }
+    }
+
+    // ============================================================
+    // SISTEM FLICKER (WARNING PHASE 2)
+    // ============================================================
+
+    private void startFlickerEffect() {
+        isFlickering = true;
+        flickerAlpha = 0f;
+        AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav");
+
+        if (flickerTimer != null && flickerTimer.isRunning())
+            flickerTimer.stop();
+
+        flickerTimer = new Timer(50, new java.awt.event.ActionListener() {
+            private int ticks = 0;
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                ticks++;
+                // Flicker acak: 50% chance untuk gelap/terang
+                if (Math.random() > 0.5) {
+                    flickerAlpha = (float) (Math.random() * 0.7f);
+                } else {
+                    flickerAlpha = 0f;
+                }
+
+                if (ticks >= 20) { // Durasi 1 detik (20 * 50ms)
+                    ((Timer) e.getSource()).stop();
+                    isFlickering = false;
+                    flickerAlpha = 0f;
+                }
+                officePanel.repaint();
+            }
+        });
+        flickerTimer.start();
     }
 
     // ============================================================
@@ -1140,6 +1228,18 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 ((Timer) e.getSource()).stop();
                 isStruggling = false;
                 isHidden = false;
+
+                // ✨ FIX: Set isGameOver and stop timers immediately to prevent double jumpscare
+                isGameOver = true;
+                gameLoopTimer.stop();
+                if (lockDrainTimer != null) lockDrainTimer.stop();
+
+                // Hide controls to prevent interaction during jumpscare
+                btnDoor.setVisible(false);
+                btnLookLeft.setVisible(false);
+                btnLookRight.setVisible(false);
+                lockpickPopupPanel.setVisible(false);
+
                 triggerJumpscare(currentAttacker);
                 return;
             }
@@ -1199,6 +1299,12 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private void finishRetreat() {
         if (lastDefeatedEnemy != null) {
             lastDefeatedEnemy.retreat(10);
+            if (lastDefeatedEnemy == enemyB) {
+                hasFlickeredForPhase2 = false; // Reset agar bisa flicker lagi nanti
+            }
+            if (lastDefeatedEnemy == enemyA) {
+                hasFlickeredForEnemyA = false;
+            }
         }
         isRetreating = false;
         lastDefeatedEnemy = null;
@@ -1355,6 +1461,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
             lockDrainTimer.stop();
         if (gameLoopTimer != null && gameLoopTimer.isRunning())
             gameLoopTimer.stop();
+        if (flickerTimer != null && flickerTimer.isRunning())
+            flickerTimer.stop();
     }
 
     // ============================================================
@@ -1390,6 +1498,13 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
     private void logEvent(String message) {
         System.out.println(message);
+        if (MainFrame.isDevMode) {
+            devLogs.add(0, message);
+            if (devLogs.size() > 10)
+                devLogs.remove(devLogs.size() - 1);
+            if (officePanel != null)
+                officePanel.repaint();
+        }
     }
 
     @Override
@@ -1398,5 +1513,6 @@ public class GameGUI extends JPanel implements ResourceManaged {
         if (lockDrainTimer != null && lockDrainTimer.isRunning()) lockDrainTimer.stop();
         if (retreatTimer != null && retreatTimer.isRunning()) retreatTimer.stop();
         if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
+        if (flickerTimer != null && flickerTimer.isRunning()) flickerTimer.stop();
     }
 }

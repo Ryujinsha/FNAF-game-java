@@ -117,6 +117,8 @@ public class MainMenuGUI extends JPanel {
         content.add(createSettingRow("Graphics Quality", "HIGH"));
         content.add(Box.createVerticalStrut(30));
         content.add(createSettingRow("Fullscreen Mode", "ENABLED"));
+        content.add(Box.createVerticalStrut(30));
+        content.add(createDevModeRow());
 
         panel.add(content, BorderLayout.CENTER);
 
@@ -191,6 +193,30 @@ public class MainMenuGUI extends JPanel {
 
         row.add(lbl, BorderLayout.WEST);
         row.add(val, BorderLayout.EAST);
+        return row;
+    }
+
+    private JPanel createDevModeRow() {
+        JPanel row = createSettingRow("Developer Mode", MainFrame.isDevMode ? "ENABLED" : "DISABLED");
+        row.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        row.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mousePressed(java.awt.event.MouseEvent e) {
+                if (!MainFrame.isDevMode) {
+                    String pass = JOptionPane.showInputDialog(MainMenuGUI.this, "ENTER DEVELOPER PASSWORD:");
+                    if ("ambatukam".equals(pass)) {
+                        MainFrame.isDevMode = true;
+                        JOptionPane.showMessageDialog(MainMenuGUI.this, "DEVELOPER MODE ACTIVATED!");
+                        cardLayout.show(mainContainer, "SETTINGS"); // Refresh
+                    } else if (pass != null) {
+                        JOptionPane.showMessageDialog(MainMenuGUI.this, "WRONG PASSWORD!");
+                    }
+                } else {
+                    MainFrame.isDevMode = false;
+                    cardLayout.show(mainContainer, "SETTINGS"); // Refresh
+                }
+            }
+        });
         return row;
     }
 
