@@ -50,9 +50,14 @@ public class GameGUI extends JPanel implements ResourceManaged {
     // ============================================================
     private JPanel lockpickPopupPanel;
     private int lockBars = 0;
-    private int scrubDistance = 0;
-    private int lastMouseX = -1;
     private Timer lockDrainTimer;
+
+    // QTE Timing Hit fields
+    private double qteIndicatorPos = 0.0;   // Posisi indikator (0.0 - 1.0)
+    private int qteDirection = 1;            // Arah gerak (+1 kanan, -1 kiri)
+    private Timer qteAnimTimer;              // Timer untuk animasi indikator
+    private boolean qteActive = false;       // Apakah QTE sedang aktif
+    private JPanel qteRenderPanel;           // Panel rendering QTE
 
     // ============================================================
     // 3. MEKANIK BERSEMBUNYI, STRUGGLE & ANIMASI
@@ -97,6 +102,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private Timer flickerTimer;           // ✨ BARU: Timer untuk kontrol flicker
     private boolean hasFlickeredForPhase2 = false; // ✨ BARU: Flag agar flicker hanya 1x per approach
     private boolean hasFlickeredForEnemyA = false; // ✨ BARU: Flag agar flicker hanya 1x per approach (The Red One)
+    private boolean hasFlickeredForDanger = false; // ✨ BARU: Flag untuk flicker peringatan terakhir (patience 1)
     private java.util.List<String> devLogs = new java.util.ArrayList<>(); // ✨ BARU: Cache log untuk Dev Mode
 
     // Path konstanta aset ruangan
@@ -142,7 +148,9 @@ public class GameGUI extends JPanel implements ResourceManaged {
         this.isGameOver = false;
         this.isLookingBack = false;
         this.lockBars = 0;
-        this.scrubDistance = 0;
+        this.qteIndicatorPos = 0.0;
+        this.qteDirection = 1;
+        this.qteActive = false;
         this.isHidden = false;
         this.isStruggling = false;
         this.struggleValue = 50;
@@ -154,6 +162,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         this.flickerAlpha = 0f;
         this.hasFlickeredForPhase2 = false;
         this.hasFlickeredForEnemyA = false;
+        this.hasFlickeredForDanger = false;
 
         // Reset retreat state
         this.isRetreating = false;
@@ -187,7 +196,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         JPanel topPanel = new JPanel();
         topPanel.setBackground(Color.DARK_GRAY);
         statusLabel = new JLabel(
-                "Objective: Bobol gembok pintu belakang.  [A/D]=Lihat  [E]=Pintu  [W]=Sembunyi  [S]=Congkel  [ESC]=Keluar");
+                "Objective: Bobol gembok pintu belakang.  [A/D]=Lihat  [W]=Sembunyi  [S]=Gembok  [SPASI]=Hit  [ESC]=Keluar");
         statusLabel.setForeground(Color.YELLOW);
         statusLabel.setFont(new Font("Consolas", Font.BOLD, 18));
         topPanel.add(statusLabel);
@@ -577,8 +586,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         if (RenderEngine.hitboxContains(HitboxConfig.LOCKDOOR_HITBOX, gamePoint)) {
             logEvent("🔧 [INTERACT] Mendekat ke gembok untuk mencongkel...");
             lockpickPopupPanel.setVisible(true);
-            lastMouseX = -1;
-            scrubDistance = 0;
+            startQte();
             updateUIVisibility();
         }
     }
@@ -618,11 +626,13 @@ public class GameGUI extends JPanel implements ResourceManaged {
         lockpickPopupPanel.setBackground(Color.BLACK);
         lockpickPopupPanel.setLayout(new BorderLayout());
 
-        JPanel scrubAreaPanel = new JPanel() {
+        // ✨ QTE TIMING HIT PANEL
+        qteRenderPanel = new JPanel() {
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 Graphics2D g2d = (Graphics2D) g;
+                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2d.setColor(Color.BLACK);
                 g2d.fillRect(0, 0, getWidth(), getHeight());
 
@@ -631,65 +641,126 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 Image imgLock = AssetCache.get(PATH_LOCK_DOOR);
                 if (imgLock != null) {
                     g2d.drawImage(imgLock, bounds.x, bounds.y, bounds.width, bounds.height, this);
-                    g2d.setColor(new Color(0, 0, 0, 160));
+                    g2d.setColor(new Color(0, 0, 0, 180));
                     g2d.fillRect(0, 0, getWidth(), getHeight());
                 }
+
+                int pw = getWidth();
+                int ph = getHeight();
 
                 // Judul
                 g2d.setColor(Color.WHITE);
                 g2d.setFont(new Font("Consolas", Font.BOLD, 28));
                 String title = "M E N C O N G K E L   G E M B O K";
                 FontMetrics fm = g2d.getFontMetrics();
-                g2d.drawString(title, (getWidth() - fm.stringWidth(title)) / 2, 80);
+                g2d.drawString(title, (pw - fm.stringWidth(title)) / 2, 80);
 
+                // Instruksi
                 g2d.setFont(new Font("Consolas", Font.PLAIN, 22));
-                String sub = "< Hati-hati! Gesek KIRI dan KANAN tapi jangan terlalu kasar! >";
+                String sub = "< Tekan [SPASI] tepat di zona HIJAU! >";
                 fm = g2d.getFontMetrics();
-                g2d.drawString(sub, (getWidth() - fm.stringWidth(sub)) / 2, 130);
+                g2d.drawString(sub, (pw - fm.stringWidth(sub)) / 2, 130);
 
-                // Bar progres gembok
+                // ============================================================
+                // QTE BAR — Bar horizontal dengan zona hijau + indikator
+                // ============================================================
+                int qteBarW = Math.min(700, pw - 100);
+                int qteBarH = 50;
+                int qteBarX = (pw - qteBarW) / 2;
+                int qteBarY = ph / 2 - 60;
+
+                // Background bar (abu gelap)
+                g2d.setColor(new Color(40, 40, 40, 220));
+                g2d.fillRoundRect(qteBarX, qteBarY, qteBarW, qteBarH, 12, 12);
+
+                // Zona Hijau (tengah bar, ukuran tergantung level)
+                double greenFraction = getGreenZoneWidth();
+                int greenW = (int) (qteBarW * greenFraction);
+                int greenX = qteBarX + (qteBarW - greenW) / 2;
+                g2d.setColor(new Color(0, 200, 0, 160));
+                g2d.fillRoundRect(greenX, qteBarY + 2, greenW, qteBarH - 4, 8, 8);
+
+                // Border zona hijau
+                g2d.setColor(new Color(0, 255, 0, 220));
+                g2d.setStroke(new BasicStroke(2));
+                g2d.drawRoundRect(greenX, qteBarY + 2, greenW, qteBarH - 4, 8, 8);
+
+                // Border bar luar
+                g2d.setColor(new Color(100, 100, 100));
+                g2d.setStroke(new BasicStroke(3));
+                g2d.drawRoundRect(qteBarX, qteBarY, qteBarW, qteBarH, 12, 12);
+
+                // ✨ INDIKATOR — Segitiga / garis bergerak
+                if (qteActive) {
+                    int indicatorX = qteBarX + (int) (qteIndicatorPos * qteBarW);
+                    int indicatorW = 6;
+
+                    // Garis indikator
+                    g2d.setColor(Color.WHITE);
+                    g2d.setStroke(new BasicStroke(4));
+                    g2d.drawLine(indicatorX, qteBarY - 5, indicatorX, qteBarY + qteBarH + 5);
+
+                    // Segitiga atas (panah ke bawah)
+                    int[] triX = {indicatorX - 10, indicatorX + 10, indicatorX};
+                    int[] triY = {qteBarY - 20, qteBarY - 20, qteBarY - 5};
+                    g2d.setColor(Color.YELLOW);
+                    g2d.fillPolygon(triX, triY, 3);
+
+                    // Segitiga bawah (panah ke atas)
+                    int[] triX2 = {indicatorX - 10, indicatorX + 10, indicatorX};
+                    int[] triY2 = {qteBarY + qteBarH + 20, qteBarY + qteBarH + 20, qteBarY + qteBarH + 5};
+                    g2d.fillPolygon(triX2, triY2, 3);
+                }
+
+                // Level indicator text
+                g2d.setColor(Color.YELLOW);
+                g2d.setFont(new Font("Consolas", Font.BOLD, 20));
+                String levelText = "Level " + (lockBars + 1) + " / 6";
+                fm = g2d.getFontMetrics();
+                g2d.drawString(levelText, (pw - fm.stringWidth(levelText)) / 2, qteBarY - 35);
+
+                // ============================================================
+                // 6 BAR PROGRESS — Di bawah QTE bar
+                // ============================================================
                 int barW = 80, barSpacing = 20;
-                int startX = (getWidth() - (6 * barW + 5 * barSpacing)) / 2;
+                int startX = (pw - (6 * barW + 5 * barSpacing)) / 2;
+                int barY = qteBarY + qteBarH + 80;
                 for (int i = 0; i < 6; i++) {
                     boolean filled = (i < lockBars);
-                    g2d.setColor(filled ? new Color(0, 255, 0, 200) : new Color(50, 50, 50, 200));
-                    g2d.fillRect(startX + i * (barW + barSpacing), getHeight() - 150, barW, 60);
+                    // Gradient fill untuk bar terisi
+                    if (filled) {
+                        g2d.setColor(new Color(0, 220, 0, 200));
+                    } else if (i == lockBars) {
+                        // Bar aktif saat ini — highlight
+                        g2d.setColor(new Color(80, 80, 0, 200));
+                    } else {
+                        g2d.setColor(new Color(50, 50, 50, 200));
+                    }
+                    g2d.fillRoundRect(startX + i * (barW + barSpacing), barY, barW, 50, 8, 8);
+
+                    // Border
+                    if (filled) {
+                        g2d.setColor(new Color(100, 255, 100));
+                    } else if (i == lockBars) {
+                        g2d.setColor(Color.YELLOW);
+                    } else {
+                        g2d.setColor(Color.GRAY);
+                    }
+                    g2d.setStroke(new BasicStroke(2));
+                    g2d.drawRoundRect(startX + i * (barW + barSpacing), barY, barW, 50, 8, 8);
+
+                    // Nomor bar
+                    g2d.setFont(new Font("Consolas", Font.BOLD, 18));
+                    fm = g2d.getFontMetrics();
+                    String num = String.valueOf(i + 1);
+                    int textX = startX + i * (barW + barSpacing) + (barW - fm.stringWidth(num)) / 2;
+                    int textY = barY + 32;
                     g2d.setColor(filled ? Color.WHITE : Color.GRAY);
-                    g2d.drawRect(startX + i * (barW + barSpacing), getHeight() - 150, barW, 60);
+                    g2d.drawString(num, textX, textY);
                 }
             }
         };
-
-        scrubAreaPanel.addMouseMotionListener(new java.awt.event.MouseMotionAdapter() {
-            @Override
-            public void mouseMoved(java.awt.event.MouseEvent e) {
-                if (isGameOver || lockBars >= 6)
-                    return;
-                if (lastMouseX != -1) {
-                    int delta = Math.abs(e.getX() - lastMouseX);
-                    if (delta > 150) {
-                        // Terlalu kasar — lockpick terpeleset
-                        scrubDistance = 0;
-                        lockBars = Math.max(0, lockBars - 2);
-                        logEvent("❌ LOCKPICK TERPELESET! Hilang 2 Bar!");
-                        AudioManager.playSound("/assets/audio/sfx/button_click.wav");
-                        scrubAreaPanel.repaint();
-                    } else {
-                        scrubDistance += delta;
-                        if (scrubDistance > 3500) {
-                            lockBars++;
-                            scrubDistance = 0;
-                            AudioManager.playSound("/assets/audio/sfx/button_click.wav");
-                            scrubAreaPanel.repaint();
-                            if (lockBars >= 6)
-                                handleLockpickSuccess();
-                        }
-                    }
-                }
-                lastMouseX = e.getX();
-            }
-        });
-        lockpickPopupPanel.add(scrubAreaPanel, BorderLayout.CENTER);
+        lockpickPopupPanel.add(qteRenderPanel, BorderLayout.CENTER);
 
         JButton btnClose = new JButton("MENJAUH DARI PINTU [S / ESC]");
         btnClose.setBackground(Color.DARK_GRAY);
@@ -697,10 +768,104 @@ public class GameGUI extends JPanel implements ResourceManaged {
         btnClose.setFont(new Font("Consolas", Font.BOLD, 20));
         btnClose.setPreferredSize(new Dimension(getWidth(), 60));
         btnClose.addActionListener(e -> {
+            stopQte();
             lockpickPopupPanel.setVisible(false);
             updateUIVisibility();
         });
         lockpickPopupPanel.add(btnClose, BorderLayout.SOUTH);
+    }
+
+    // ============================================================
+    // QTE TIMING HIT SYSTEM
+    // ============================================================
+
+    /** Lebar zona hijau berdasarkan level saat ini (lockBars). Semakin tinggi semakin kecil. */
+    private double getGreenZoneWidth() {
+        // Bar 0 = 35%, Bar 1 = 31%, ... Bar 5 = 15%
+        return 0.35 - (lockBars * 0.04);
+    }
+
+    /** Kecepatan indikator berdasarkan level saat ini. Semakin tinggi semakin cepat. */
+    private double getQteSpeed() {
+        // Bar 0 = 0.015, Bar 1 = 0.019, ... Bar 5 = 0.035
+        return 0.015 + (lockBars * 0.004);
+    }
+
+    /** Mulai QTE: reset indikator dan mulai timer animasi. */
+    private void startQte() {
+        qteIndicatorPos = 0.0;
+        qteDirection = 1;
+        qteActive = true;
+
+        if (qteAnimTimer != null && qteAnimTimer.isRunning())
+            qteAnimTimer.stop();
+
+        // ~60fps animasi indikator
+        qteAnimTimer = new Timer(16, e -> {
+            if (!qteActive || isGameOver) {
+                ((Timer) e.getSource()).stop();
+                return;
+            }
+            qteIndicatorPos += getQteSpeed() * qteDirection;
+
+            // Pantulkan di ujung bar
+            if (qteIndicatorPos >= 1.0) {
+                qteIndicatorPos = 1.0;
+                qteDirection = -1;
+            } else if (qteIndicatorPos <= 0.0) {
+                qteIndicatorPos = 0.0;
+                qteDirection = 1;
+            }
+
+            if (qteRenderPanel != null)
+                qteRenderPanel.repaint();
+        });
+        qteAnimTimer.start();
+    }
+
+    /** Hentikan QTE: stop timer, reset state. */
+    private void stopQte() {
+        qteActive = false;
+        if (qteAnimTimer != null && qteAnimTimer.isRunning())
+            qteAnimTimer.stop();
+    }
+
+    /** Dipanggil saat player menekan SPASI di layar QTE gembok. */
+    private void handleQteHit() {
+        if (!qteActive || lockBars >= 6 || isGameOver)
+            return;
+
+        double greenWidth = getGreenZoneWidth();
+        double greenStart = 0.5 - greenWidth / 2;
+        double greenEnd = 0.5 + greenWidth / 2;
+
+        if (qteIndicatorPos >= greenStart && qteIndicatorPos <= greenEnd) {
+            // ✅ HIT! Bar terisi
+            lockBars++;
+            logEvent("✅ [QTE HIT] Bar " + lockBars + "/6 berhasil!");
+            AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+
+            if (lockBars >= 6) {
+                stopQte();
+                handleLockpickSuccess();
+            } else {
+                // Reset indikator untuk level berikutnya
+                qteIndicatorPos = 0.0;
+                qteDirection = 1;
+            }
+        } else {
+            // ❌ MISS! Penalti mundur 1 bar
+            lockBars = Math.max(0, lockBars - 1);
+            logEvent("❌ [QTE MISS] Lockpick terpeleset! Mundur ke bar " + lockBars + "/6.");
+            AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+
+            // Reset indikator
+            qteIndicatorPos = 0.0;
+            qteDirection = 1;
+        }
+
+        if (qteRenderPanel != null)
+            qteRenderPanel.repaint();
     }
 
     private void handleLockpickSuccess() {
@@ -905,12 +1070,19 @@ public class GameGUI extends JPanel implements ResourceManaged {
             }
         });
 
-        // SPACE — Spam struggle
+        // SPACE — QTE Lockpick Hit + Spam Struggle
         im.put(KeyStroke.getKeyStroke("SPACE"), "spamSpace");
         am.put("spamSpace", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (isStruggling && !isGameOver) {
+                if (isGameOver) return;
+                // Prioritas 1: QTE Lockpick
+                if (qteActive && lockpickPopupPanel.isVisible()) {
+                    handleQteHit();
+                    return;
+                }
+                // Prioritas 2: Struggle QTE
+                if (isStruggling) {
                     struggleValue += 15;
                     if (struggleValue >= 100)
                         checkStruggleWin();
@@ -973,7 +1145,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
                     return;
 
                 if (lockpickPopupPanel.isVisible()) {
-                    // Tutup lockpick
+                    // Tutup lockpick + stop QTE
+                    stopQte();
                     lockpickPopupPanel.setVisible(false);
                     updateUIVisibility();
                     logEvent("🔧 [INTERACT] Kamu mundur dari gembok.");
@@ -981,11 +1154,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
                     // Keluar kabinet
                     exitCabinet();
                 } else if (isLookingBack && !isHidden) {
-                    // Buka lockpick pintu belakang
+                    // Buka lockpick pintu belakang + start QTE
                     logEvent("🔧 [INTERACT] Mendekat ke gembok untuk mencongkel...");
                     lockpickPopupPanel.setVisible(true);
-                    lastMouseX = -1;
-                    scrubDistance = 0;
+                    startQte();
                     updateUIVisibility();
                 }
             }
@@ -1075,6 +1247,15 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 updateDoorVisuals();
                 hidEarly = isHidden;
             }
+
+            // Phase 3: Critical Danger (patience == 1)
+            if (enemy.getPatienceTimer() == 1) {
+                if (!hasFlickeredForDanger) {
+                    startFlickerEffect();
+                    hasFlickeredForDanger = true;
+                }
+            }
+
             if (enemy.getPatienceTimer() <= 0) {
                 if (isHidden) {
                     if (hidEarly) {
@@ -1132,6 +1313,14 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 hidEarly = false; // Player hid too late → QTE will trigger
             }
             updateDoorVisuals();
+        }
+
+        // Phase 2.5: Critical Danger (patience == 1)
+        if (enemy.getPatienceTimer() == 1) {
+            if (!hasFlickeredForDanger) {
+                startFlickerEffect();
+                hasFlickeredForDanger = true;
+            }
         }
 
         // Phase 3: Execution (patience <= 0)
@@ -1305,6 +1494,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
             if (lastDefeatedEnemy == enemyA) {
                 hasFlickeredForEnemyA = false;
             }
+            hasFlickeredForDanger = false; // Reset danger flicker
         }
         isRetreating = false;
         lastDefeatedEnemy = null;
@@ -1339,6 +1529,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         }
 
         updateDoorVisuals();
+        startFlickerEffect(); // ✨ Tambahkan flicker sebagai peringatan terakhir 1 detik
         officePanel.repaint();
 
         Timer peekTimer = new Timer(1000, e -> triggerJumpscare(enemy));

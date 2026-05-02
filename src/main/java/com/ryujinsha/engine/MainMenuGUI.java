@@ -1,13 +1,15 @@
 package com.ryujinsha.engine;
 
 import com.ryujinsha.system.AssetCache;
+import com.ryujinsha.system.AudioManager;
+import com.ryujinsha.system.ResourceManaged;
 import javax.swing.*;
 import java.awt.*;
 
 /**
  * ✨ MainMenuGUI — Menu Utama Game dengan Halaman Pengaturan & Pencapaian
  */
-public class MainMenuGUI extends JPanel {
+public class MainMenuGUI extends JPanel implements ResourceManaged {
     private MainFrame mainFrame;
     private CardLayout cardLayout;
     private JPanel mainContainer;
@@ -26,6 +28,9 @@ public class MainMenuGUI extends JPanel {
         mainContainer.add(createAchievementsPanel(), "ACHIEVEMENTS");
 
         cardLayout.show(mainContainer, "MAIN");
+
+        // ✨ Play Main Menu BGM
+        AudioManager.playBGM("/assets/audio/bgm/Basement Bellows.wav");
     }
 
     // ============================================================
@@ -242,5 +247,12 @@ public class MainMenuGUI extends JPanel {
         item.add(text, BorderLayout.CENTER);
         
         return item;
+    }
+    @Override
+    public void stopAllProcesses() {
+        System.out.println("[MENU] Stopping Menu Processes...");
+        // BGM dihentikan oleh MainFrame atau screen berikutnya jika perlu, 
+        // tapi kita panggil stopAllSounds di sini agar aman.
+        AudioManager.stopAllSounds();
     }
 }

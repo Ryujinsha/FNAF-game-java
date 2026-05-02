@@ -10,13 +10,13 @@ public class EndingGUI extends JPanel implements ResourceManaged {
     private MainFrame mainFrame;
     private JLayeredPane layeredPane;
     private JPanel animPanel;
-    
+
     // Posisi awal karakter (Lari dari kiri luar layar)
     private int playerX = -100;
-    private int playerY = 380; 
+    private int playerY = 380;
     private Timer animationTimer;
     private int animPhase = 0;
-    
+
     // ✨ ASET GAMBAR & LOGIKA ANIMASI
     private Image[] runFrames; // Array untuk menampung frame lari
     private int currentFrame = 0;
@@ -33,7 +33,7 @@ public class EndingGUI extends JPanel implements ResourceManaged {
         setLayout(new BorderLayout());
 
         loadAssets(); // ✨ Muat gambar dulu
-        
+
         layeredPane = new JLayeredPane();
         add(layeredPane, BorderLayout.CENTER);
 
@@ -43,9 +43,10 @@ public class EndingGUI extends JPanel implements ResourceManaged {
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
                 Graphics2D g2d = (Graphics2D) g;
-                
+
                 // Mencegah blur saat scaling
-                g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+                g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                        RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
 
                 int w = getWidth();
                 int h = getHeight();
@@ -53,7 +54,7 @@ public class EndingGUI extends JPanel implements ResourceManaged {
                 // Gambar Latar (Malam / Jalanan)
                 g2d.setColor(new Color(15, 15, 25));
                 g2d.fillRect(0, 0, w, h);
-                
+
                 // Gambar Jalan / Tanah (setengah layar ke bawah)
                 int roadY = (int) (h * 0.5);
                 g2d.setColor(Color.DARK_GRAY);
@@ -99,7 +100,8 @@ public class EndingGUI extends JPanel implements ResourceManaged {
         });
 
         com.ryujinsha.system.AudioManager.stopAllSounds();
-        // com.ryujinsha.system.AudioManager.playSound("/assets/audio/music/victory_theme.wav"); // Putar musik menang jika ada
+        // com.ryujinsha.system.AudioManager.playSound("/assets/audio/music/victory_theme.wav");
+        // // Putar musik menang jika ada
 
         animationTimer.start();
     }
@@ -111,20 +113,22 @@ public class EndingGUI extends JPanel implements ResourceManaged {
         runFrames[1] = AssetCache.get("/assets/cutscenes/char_1_right.png");
         runFrames[2] = AssetCache.get("/assets/cutscenes/char_1_right.png");
         runFrames[3] = AssetCache.get("/assets/cutscenes/char_1_right.png");
-        
+
         // Catatan: Jika ada aset run_1.png dsb, ganti di atas.
 
         // Validasi jika aset tidak ditemukan
         for (Image img : runFrames) {
             if (img == null) {
-                System.err.println("❌ [ERROR] Salah satu aset char_1_right tidak ditemukan di folder assets/cutscenes/");
+                System.err
+                        .println("❌ [ERROR] Salah satu aset char_1_right tidak ditemukan di folder assets/cutscenes/");
             }
         }
     }
 
     @Override
     public void stopAllProcesses() {
-        if (animationTimer != null && animationTimer.isRunning()) animationTimer.stop();
+        if (animationTimer != null && animationTimer.isRunning())
+            animationTimer.stop();
         System.out.println("[CLEANUP] Ending processes stopped.");
     }
 
@@ -153,18 +157,19 @@ public class EndingGUI extends JPanel implements ResourceManaged {
             public void componentResized(java.awt.event.ComponentEvent e) {
                 int w = getWidth();
                 int h = getHeight();
-                
+
                 layeredPane.setBounds(0, 0, w, h);
-                if (animPanel != null) animPanel.setBounds(0, 0, w, h);
-                
+                if (animPanel != null)
+                    animPanel.setBounds(0, 0, w, h);
+
                 if (textLabel != null) {
-                    textLabel.setBounds(0, (int)(h * 0.2), w, 100);
+                    textLabel.setBounds(0, (int) (h * 0.2), w, 100);
                 }
                 if (btnRetry != null) {
-                    btnRetry.setBounds((w / 2) - 220, (int)(h * 0.6), 200, 60);
+                    btnRetry.setBounds((w / 2) - 220, (int) (h * 0.6), 200, 60);
                 }
                 if (btnMenu != null) {
-                    btnMenu.setBounds((w / 2) + 20, (int)(h * 0.6), 200, 60);
+                    btnMenu.setBounds((w / 2) + 20, (int) (h * 0.6), 200, 60);
                 }
             }
         });

@@ -5,17 +5,16 @@ import java.io.BufferedInputStream;
 import java.io.InputStream;
 
 public class AudioManager {
-    
+    private static Clip bgmClip;
+
     // Memutar SFX (Sekali putar)
     public static void playSound(String path) {
         try {
-            // Membaca dari resource Maven (direktori assets)
             InputStream audioSrc = AudioManager.class.getResourceAsStream(path);
             if (audioSrc == null) {
                 System.err.println("[AUDIO ERROR] File tidak ditemukan: " + path);
                 return;
             }
-            // Menggunakan BufferedInputStream agar kompatibel dengan AudioSystem
             InputStream bufferedIn = new BufferedInputStream(audioSrc);
             AudioInputStream audioStream = AudioSystem.getAudioInputStream(bufferedIn);
             
@@ -27,9 +26,35 @@ public class AudioManager {
         }
     }
 
-    // Menghentikan BGM atau suara panjang (jika Anda menambahkannya nanti)
+    // Memutar BGM dengan opsi looping
+    public static void playBGM(String path) {
+        try {
+            stopAllSounds(); // Hentikan BGM sebelumnya jika ada
+            
+            InputStream audioSrc = AudioManager.class.getResourceAsStream(path);
+            if (audioSrc == null) {
+                System.err.println("[BGM ERROR] File tidak ditemukan: " + path);
+                return;
+            }
+            InputStream bufferedIn = new BufferedInputStream(audioSrc);
+            AudioInputStream audioStream = AudioSystem.getAudioInputStream(bufferedIn);
+            
+            bgmClip = AudioSystem.getClip();
+            bgmClip.open(audioStream);
+            bgmClip.loop(Clip.LOOP_CONTINUOUSLY); // Loop terus menerus
+            bgmClip.start();
+            System.out.println("[AUDIO] Memutar BGM: " + path);
+        } catch (Exception e) {
+            System.err.println("[AUDIO ERROR] Gagal memutar BGM " + path + ": " + e.getMessage());
+        }
+    }
+
+    // Menghentikan BGM atau suara panjang
     public static void stopAllSounds() {
-        System.out.println("[AUDIO] Menghentikan semua background music...");
-        // Implementasi logika stop() untuk Clip BGM yang sedang berjalan diletakkan di sini nanti.
+        if (bgmClip != null && bgmClip.isRunning()) {
+            bgmClip.stop();
+            bgmClip.close();
+            System.out.println("[AUDIO] Background music dihentikan.");
+        }
     }
 }
