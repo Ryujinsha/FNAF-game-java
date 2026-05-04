@@ -38,7 +38,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private EnemyOdd enemyA; // The Red One (Pintu Depan)
     private EnemyEven enemyB; // Hina (Ventilasi)
     private boolean areEnemiesActive = true;
-    private boolean isGameOver = false;
+
+    // ✨ State Management Enums
+    private GameState currentState = GameState.PLAYING;
+    private PlayerPosition currentPosition = PlayerPosition.FRONT_ROOM;
 
     private JLabel statusLabel;
     private PixelButton btnDoor, btnLookLeft, btnLookRight;
@@ -62,8 +65,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     // ============================================================
     // 3. MEKANIK BERSEMBUNYI, STRUGGLE & ANIMASI
     // ============================================================
-    private boolean isHidden = false;
-    private boolean isStruggling = false;
+    // (currentPosition == PlayerPosition.CABINET) dan (currentState == GameState.STRUGGLING) sekarang menggunakan currentState dan currentPosition
     private int struggleValue = 50;
     private Timer struggleTimer;
     private Enemy currentAttacker = null;
@@ -95,7 +97,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
     private Timer gameLoopTimer;
     private Timer quoteTimer;
-    private boolean isLookingBack = false;
+    // (currentPosition == PlayerPosition.BACK_ROOM) sekarang menggunakan currentPosition
     private float vignetteIntensity = 0f; // ✨ BARU: Intensitas efek vignette
     private boolean isFlickering = false; // ✨ BARU: Status lampu mati-nyala
     private float flickerAlpha = 0f;      // ✨ BARU: Opacity overlay hitam saat flicker
@@ -145,14 +147,12 @@ public class GameGUI extends JPanel implements ResourceManaged {
         this.enemyB = new EnemyEven("Hina", 20);
 
         this.areEnemiesActive = true;
-        this.isGameOver = false;
-        this.isLookingBack = false;
+        this.currentState = GameState.PLAYING;
+        this.currentPosition = PlayerPosition.FRONT_ROOM;
         this.lockBars = 0;
         this.qteIndicatorPos = 0.0;
         this.qteDirection = 1;
         this.qteActive = false;
-        this.isHidden = false;
-        this.isStruggling = false;
         this.struggleValue = 50;
         this.doorEnemyVisual = null;
         this.ventEnemyVisual = null;
@@ -205,13 +205,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         // Panel render utama (menggambar background + enemy)
         // ✨ FIX: Mouse listener dipasang di officePanel (bukan layeredPane) karena
         // officePanel menutupi seluruh layeredPane sehingga semua klik masuk ke sini.
-        officePanel = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                paintGame((Graphics2D) g);
-            }
-        };
+        officePanel = new GameRenderer(this);
         layeredPane.add(officePanel, JLayeredPane.DEFAULT_LAYER);
 
         setupInteractionHits();
@@ -227,299 +221,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     // ============================================================
-    // RENDERING UTAMA
+    // RENDERING UTAMA DILAKUKAN OLEH GameRenderer
     // ============================================================
 
-    /**
-     * Dipanggil dari paintComponent officePanel.
-     * Semua logika render ada di sini agar terstruktur.
-     */
-    private void paintGame(Graphics2D g2d) {
-        int pw = officePanel.getWidth();
-        int ph = officePanel.getHeight();
 
-        // Background hitam (letterbox)
-        g2d.setColor(Color.BLACK);
-        g2d.fillRect(0, 0, pw, ph);
-
-        // Ambil batas cangkang
-        Rectangle bounds = RenderEngine.getGameBounds(pw, ph);
-
-        if (isLookingBack) {
-            paintBackRoom(g2d, bounds);
-        } else {
-            paintFrontRoom(g2d, bounds);
-        }
-
-        if (isHidden) {
-            paintCabinetView(g2d, bounds, pw, ph);
-        }
-
-        // ✨ BARU: Render vignette indicator
-        if (vignetteIntensity > 0) {
-            paintVignette(g2d, pw, ph);
-        }
-
-        // ✨ BARU: Render overlay flicker lampu
-        if (isFlickering) {
-            g2d.setColor(new Color(0, 0, 0, (int) (flickerAlpha * 255)));
-            g2d.fillRect(0, 0, pw, ph);
-        }
-
-        // ✨ BARU: Render overlay animasi retreat (saat musuh kabur)
-        if (isRetreating) {
-            paintRetreatOverlay(g2d, bounds);
-        }
-
-        // ✨ BARU: Render log developer di pojok kiri atas
-        if (MainFrame.isDevMode) {
-            paintDevLogs(g2d);
-        }
-    }
-
-    private void paintFrontRoom(Graphics2D g2d, Rectangle bounds) {
-        // 1. Render Enemy B Phase 1: Show Up on Vent (patience == 3)
-        // Hina partially visible in the vent opening
-        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() == 3 && !isStruggling && !isRetreating) {
-            Image ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
-            if (ventSprite != null) {
-                RenderEngine.drawSprite(g2d, ventSprite, bounds,
-                        HitboxConfig.ENEMY_B_SPRITE_X, HitboxConfig.ENEMY_B_SPRITE_Y,
-                        HitboxConfig.ENEMY_B_SPRITE_W, HitboxConfig.ENEMY_B_SPRITE_H,
-                        true, officePanel);
-            }
-        }
-
-        // 2. Render Enemy A (The Red One - Pintu Depan)
-        // ✨ MODIFIKASI: Hanya muncul JIKA tidak sedang flicker
-        if (doorEnemyVisual != null && !player.isLeftDoorClosed() && !isFlickering) {
-            RenderEngine.drawSprite(g2d, doorEnemyVisual, bounds,
-                    HitboxConfig.ENEMY_A_SPRITE_X, HitboxConfig.ENEMY_A_SPRITE_Y,
-                    HitboxConfig.ENEMY_A_SPRITE_W, HitboxConfig.ENEMY_A_SPRITE_H,
-                    true, officePanel);
-        }
-
-        // 3. Render Enemy B Phase 2: Idle in Front (patience <= 2)
-        // Hina fully visible, standing in front of the player
-        // ✨ MODIFIKASI: Hanya muncul solid JIKA flicker sudah selesai
-        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() <= 2 && !isStruggling && !isRetreating && !isFlickering) {
-            Image hinaImg = getIdleSprite(enemyB);
-            if (hinaImg != null) {
-                RenderEngine.drawSprite(g2d, hinaImg, bounds,
-                        HitboxConfig.ENEMY_B_PHASE2_X, HitboxConfig.ENEMY_B_PHASE2_Y,
-                        HitboxConfig.ENEMY_B_PHASE2_W, HitboxConfig.ENEMY_B_PHASE2_H,
-                        true, officePanel);
-            }
-        }
-
-        // 4. Render ruangan depan (di atas enemy agar enemy tampak berada di balik
-        // dinding)
-        Image imgFront = AssetCache.get(PATH_FRONT_ROOM);
-        if (imgFront != null) {
-            g2d.drawImage(imgFront, bounds.x, bounds.y, bounds.width, bounds.height, officePanel);
-        }
-
-        // 5. Render pintu tertutup (overlay di atas ruangan)
-        if (player.isLeftDoorClosed()) {
-            Image imgDoor = AssetCache.get(PATH_FRONT_DOOR);
-            if (imgDoor != null) {
-                g2d.drawImage(imgDoor, bounds.x, bounds.y, bounds.width, bounds.height, officePanel);
-            }
-        }
-    }
-
-    private void paintBackRoom(Graphics2D g2d, Rectangle bounds) {
-        // Tampilkan pintu belakang (terbuka atau terkunci)
-        boolean isUnlocked = (lockBars >= 6);
-        String path = isUnlocked ? PATH_BACK_DOOR_OPENED : PATH_BACK_DOOR;
-        Image img = AssetCache.get(path);
-        if (img != null) {
-            g2d.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height, officePanel);
-        }
-
-        // ============================================================
-        // DEBUG HITBOX: Aktifkan baris-baris di bawah ini saat kalibrasi
-        // ============================================================
-        RenderEngine.drawHitboxDebug(g2d, HitboxConfig.CABINET_HITBOX, bounds,
-                new Color(0, 255, 0, 180));
-        RenderEngine.drawHitboxDebug(g2d, HitboxConfig.LOCKDOOR_HITBOX, bounds,
-                new Color(255, 0, 0, 180));
-    }
-
-    private void paintCabinetView(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
-        if (isStruggling && qteBodyImg != null) {
-            // ✨ OVERHAUL QTE: Delegasikan seluruh perenderan ke paintStruggleQTE untuk
-            // kontrol layering
-            paintStruggleQTE(g2d, bounds, pw, ph);
-        } else {
-            // === RENDER IDLE CABINET (Tanpa Struggle) ===
-            int slitWidth = (int) (bounds.width * HitboxConfig.CABINET_SLIT_WIDTH_FRACTION);
-            int slitX = bounds.x + (bounds.width - slitWidth) / 2;
-            int slitMarginV = (int) (bounds.height * HitboxConfig.CABINET_SLIT_MARGIN_FRACTION);
-            int slitY = bounds.y + slitMarginV;
-            int slitH = bounds.height - slitMarginV * 2;
-
-            // Blackout seluruh layar kecuali celah (Idle)
-            g2d.setColor(Color.BLACK);
-            g2d.fillRect(0, 0, slitX, ph); // kiri
-            g2d.fillRect(slitX + slitWidth, 0, pw - (slitX + slitWidth), ph); // kanan
-            g2d.fillRect(slitX, 0, slitWidth, slitY); // atas celah
-            g2d.fillRect(slitX, slitY + slitH, slitWidth, ph - (slitY + slitH)); // bawah celah
-
-            // Teks panduan
-            g2d.setColor(Color.WHITE);
-            g2d.setFont(new Font("Consolas", Font.BOLD, 20));
-            g2d.drawString(">>> MENGINTIP DARI DALAM KABINET <<<", 30, 40);
-        }
-    }
-
-    /**
-     * Render overlay musuh yang sedang kabur (retreat).
-     */
-    private void paintRetreatOverlay(Graphics2D g2d, Rectangle bounds) {
-        if (retreatImg == null || lastDefeatedEnemy == null)
-            return;
-
-        // ✨ OVERHAUL: Efek Zoom-Out (Mengecil) saat mundur
-        double progress = (double) retreatAnimTicks / HitboxConfig.RETREAT_DURATION_TICKS;
-        double scaleFactor = 1.3 - (progress * 0.5); // Mulai dari 1.3x mengecil ke 0.8x
-        
-        // Hitung posisi horizontal berdasarkan tick (meluncur ke samping)
-        int xOffset = retreatAnimTicks * HitboxConfig.RETREAT_SPEED_X;
-
-        // Pilih posisi asal berdasarkan enemy (Hina di kanan, Red One di kiri)
-        int basePosX, basePosY, baseW, baseH;
-        if (lastDefeatedEnemy == enemyB) {
-            // ✨ OVERHAUL HINA RETREAT: Berukuran besar dan bergerak ke arah KANAN
-            double hinaScale = scaleFactor * 1.5; // Lebih besar sesuai permintaan
-            basePosX = HitboxConfig.ENEMY_B_PHASE2_X + xOffset;
-            basePosY = HitboxConfig.ENEMY_B_PHASE2_Y;
-            baseW = (int) (HitboxConfig.ENEMY_B_PHASE2_W * hinaScale);
-            baseH = (int) (HitboxConfig.ENEMY_B_PHASE2_H * hinaScale);
-            
-            // Render manual agar bisa "di belakang/luar" black bar jika perlu (clipping otomatis oleh Graphics context)
-            RenderEngine.drawSprite(g2d, retreatImg, bounds, basePosX, basePosY - 50, baseW, baseH, true, officePanel);
-        } else {
-            // Enemy A mundur ke arah kiri
-            basePosX = HitboxConfig.ENEMY_A_SPRITE_X - xOffset;
-            basePosY = HitboxConfig.ENEMY_A_SPRITE_Y;
-            baseW = (int) (HitboxConfig.ENEMY_A_SPRITE_W * scaleFactor);
-            baseH = (int) (HitboxConfig.ENEMY_A_SPRITE_H * scaleFactor);
-            RenderEngine.drawSprite(g2d, retreatImg, bounds, basePosX, basePosY - 50, baseW, baseH, true, officePanel);
-        }
-    }
-
-    private void paintStruggleQTE(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
-        // 1. HITUNG DIMENSI CELAH (Berdasarkan Progress)
-        // 100% (Menang) = Mingkem (Min Slit), 0% (Kalah) = Mangap (Max Slit)
-        double progressRatio = struggleValue / 100.0;
-        int slitWidth = (int) (HitboxConfig.QTE_SLIT_WIDTH_MAX -
-                (progressRatio * (HitboxConfig.QTE_SLIT_WIDTH_MAX - HitboxConfig.QTE_SLIT_WIDTH_MIN)));
-
-        int slitX = bounds.x + (bounds.width - slitWidth) / 2;
-        int slitMarginV = (int) (bounds.height * HitboxConfig.CABINET_SLIT_MARGIN_FRACTION);
-        int slitY = bounds.y + slitMarginV;
-        int slitH = bounds.height - slitMarginV * 2;
-
-        // 2. LAYER 1: Gambar tubuh musuh (PALING BELAKANG)
-        // ✨ MODIFIKASI: Body dibuat lebih besar (1.1 -> 1.4) agar lebih realistis
-        int bodyH = (int) (slitH * 1.4); 
-        int bodyOrigW = qteBodyImg.getWidth(officePanel);
-        int bodyOrigH = qteBodyImg.getHeight(officePanel);
-        int bodyW = (bodyOrigH > 0) ? (bodyH * bodyOrigW / bodyOrigH) : slitWidth;
-        int bodyX = bounds.x + (bounds.width - bodyW) / 2;
-        int bodyY = slitY - (bodyH - slitH) / 2;
-
-        g2d.drawImage(qteBodyImg, bodyX, bodyY, bodyW, bodyH, officePanel);
-
-        // 3. LAYER 2: Gambar "Mask" Hitam (Pintu Kabinet)
-        // Ini akan menutupi tubuh musuh di sisi kiri dan kanan
-        g2d.setColor(Color.BLACK);
-        g2d.fillRect(0, 0, slitX, ph); // Bar Kiri
-        g2d.fillRect(slitX + slitWidth, 0, pw - (slitX + slitWidth), ph); // Bar Kanan
-        g2d.fillRect(slitX, 0, slitWidth, slitY); // Bar Atas
-        g2d.fillRect(slitX, slitY + slitH, slitWidth, ph - (slitY + slitH)); // Bar Bawah
-
-        // 4. LAYER 3: Gambar tangan musuh (PALING DEPAN — di atas black bars / screen edges)
-        if (qteHandLeftImg != null && qteHandRightImg != null) {
-            int handH = (int) (slitH * 0.85);
-            int hOrigW = qteHandLeftImg.getWidth(officePanel);
-            int hOrigH = qteHandLeftImg.getHeight(officePanel);
-            int handW = (hOrigH > 0) ? (handH * hOrigW / hOrigH) : (slitWidth / 2);
-
-            int handY = slitY + (slitH - handH) / 2;
-
-            // ✨ REPOSITION: Tangan kiri ditempel ke tepi kiri layar (black bar area)
-            // Ujung kanan tangan menyentuh slit edge
-            int lx = slitX - handW + (handW / 5);
-            g2d.drawImage(qteHandLeftImg, lx, handY, handW, handH, officePanel);
-
-            // ✨ REPOSITION: Tangan kanan ditempel ke tepi kanan layar (black bar area)
-            int rx = slitX + slitWidth - (handW / 5);
-            g2d.drawImage(qteHandRightImg, rx, handY, handW, handH, officePanel);
-        }
-
-        // 5. Teks & Bar UI
-        g2d.setColor(Color.RED);
-        g2d.setFont(new Font("Consolas", Font.BOLD, 30));
-        String warn = "!!! TAHAN PINTU !!!";
-        FontMetrics fm = g2d.getFontMetrics();
-        g2d.drawString(warn, (pw - fm.stringWidth(warn)) / 2, ph / 2 - 120);
-
-        int barW = 500, barH = 25;
-        int barX = (pw - barW) / 2;
-        int barY = ph - 100;
-        g2d.setColor(Color.BLACK);
-        g2d.fillRect(barX, barY, barW, barH);
-
-        if (struggleValue < 30)
-            g2d.setColor(Color.RED);
-        else if (struggleValue < 70)
-            g2d.setColor(Color.YELLOW);
-        else
-            g2d.setColor(Color.GREEN);
-        g2d.fillRect(barX, barY, (int) ((progressRatio) * barW), barH);
-
-        g2d.setColor(Color.WHITE);
-        g2d.drawRect(barX, barY, barW, barH);
-
-        g2d.setFont(new Font("Consolas", Font.BOLD, 18));
-        String instText = "SPAM KLIK ATAU SPASI! [" + struggleValue + "%]";
-        FontMetrics fmT = g2d.getFontMetrics();
-        g2d.drawString(instText, (pw - fmT.stringWidth(instText)) / 2, barY - 15);
-    }
-
-    /**
-     * Menggambar efek vignette (hitam di pinggir) sebagai penanda bahaya.
-     */
-    private void paintVignette(Graphics2D g2d, int w, int h) {
-        float alpha = Math.min(0.8f, vignetteIntensity);
-        RadialGradientPaint rgp = new RadialGradientPaint(
-                new Point2D.Float(w / 2f, h / 2f),
-                Math.max(w, h) / 1.5f,
-                new float[] { 0.0f, 0.8f, 1.0f },
-                new Color[] { new Color(0, 0, 0, 0), new Color(0, 0, 0, (int) (alpha * 150)), new Color(0, 0, 0, (int) (alpha * 255)) }
-        );
-        g2d.setPaint(rgp);
-        g2d.fillRect(0, 0, w, h);
-    }
-
-    /**
-     * Render log kejadian secara real-time untuk Developer Mode.
-     */
-    private void paintDevLogs(Graphics2D g2d) {
-        g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
-        int y = 30;
-        for (String log : devLogs) {
-            // Shadow
-            g2d.setColor(new Color(0, 0, 0, 150));
-            g2d.drawString(log, 22, y + 2);
-            // Text
-            g2d.setColor(Color.CYAN);
-            g2d.drawString(log, 20, y);
-            y += 20;
-        }
-    }
 
     // ============================================================
     // SETUP INTERAKSI KLIK (HITBOX SYSTEM)
@@ -532,12 +237,12 @@ public class GameGUI extends JPanel implements ResourceManaged {
         officePanel.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                if (isGameOver)
+                if ((currentState == GameState.GAMEOVER))
                     return;
                 requestFocusInWindow();
 
                 // Prioritas 1: Struggle QTE - klik mana pun dihitung
-                if (isStruggling) {
+                if ((currentState == GameState.STRUGGLING)) {
                     struggleValue += 15;
                     if (struggleValue >= 100)
                         checkStruggleWin();
@@ -549,7 +254,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 }
 
                 // Prioritas 2: Keluar dari kabinet
-                if (isHidden) {
+                if ((currentPosition == PlayerPosition.CABINET)) {
                     exitCabinet();
                     return;
                 }
@@ -564,7 +269,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
                     return;
 
                 // Prioritas 3: Interaksi di back room
-                if (isLookingBack && !lockpickPopupPanel.isVisible()) {
+                if ((currentPosition == PlayerPosition.BACK_ROOM) && !lockpickPopupPanel.isVisible()) {
                     handleBackRoomClick(gamePoint);
                 }
             }
@@ -592,8 +297,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     private void enterCabinet() {
-        isHidden = true;
-        isLookingBack = false;
+        currentPosition = PlayerPosition.CABINET;
+        currentPosition = PlayerPosition.FRONT_ROOM;
 
         // Tentukan apakah bersembunyi "lebih awal" (aman) atau telat (QTE)
         Enemy attacker = getEnemyAtDoor();
@@ -610,7 +315,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     private void exitCabinet() {
-        isHidden = false;
+        currentPosition = PlayerPosition.BACK_ROOM;
         AudioManager.playSound("/assets/audio/sfx/door_open.wav");
         logEvent("🚪 Kamu merangkak keluar dari kabinet.");
         updateUIVisibility();
@@ -802,7 +507,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
         // ~60fps animasi indikator
         qteAnimTimer = new Timer(16, e -> {
-            if (!qteActive || isGameOver) {
+            if (!qteActive || (currentState == GameState.GAMEOVER)) {
                 ((Timer) e.getSource()).stop();
                 return;
             }
@@ -832,7 +537,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
     /** Dipanggil saat player menekan SPASI di layar QTE gembok. */
     private void handleQteHit() {
-        if (!qteActive || lockBars >= 6 || isGameOver)
+        if (!qteActive || lockBars >= 6 || (currentState == GameState.GAMEOVER))
             return;
 
         double greenWidth = getGreenZoneWidth();
@@ -869,7 +574,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     private void handleLockpickSuccess() {
-        isGameOver = true;
+        currentState = GameState.GAMEOVER;
         gameLoopTimer.stop();
         if (lockDrainTimer != null)
             lockDrainTimer.stop();
@@ -912,7 +617,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
      * Ambil sprite idle enemy.
      * ✨ FIX: Hina sekarang menggunakan path idle yang benar (bukan QTE body).
      */
-    private Image getIdleSprite(Enemy enemy) {
+    public Image getIdleSprite(Enemy enemy) {
         if (enemy == enemyA) {
             // The Red One — gunakan phase 1 untuk idle
             return AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png");
@@ -931,7 +636,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         // Enemy A: Tampilkan sprite saat sudah dekat (patience <= 3)
         // ✨ FIX: Diubah dari <= 2 ke <= 3 agar terlihat saat pintu terbuka
         if (enemy != null && enemy == enemyA && enemy.getPatienceTimer() <= 3
-                && !isStruggling && !isRetreating) {
+                && !(currentState == GameState.STRUGGLING) && !isRetreating) {
             doorEnemyVisual = getIdleSprite(enemy);
         }
         // Enemy B (Hina): All phase rendering handled in paintFrontRoom()
@@ -1030,9 +735,9 @@ public class GameGUI extends JPanel implements ResourceManaged {
         layeredPane.add(btnLookRight, JLayeredPane.MODAL_LAYER);
 
         java.awt.event.ActionListener lookAction = e -> {
-            if (isGameOver || lockpickPopupPanel.isVisible() || isHidden)
+            if ((currentState == GameState.GAMEOVER) || lockpickPopupPanel.isVisible() || (currentPosition == PlayerPosition.CABINET))
                 return;
-            isLookingBack = !isLookingBack;
+            currentPosition = (currentPosition == PlayerPosition.FRONT_ROOM) ? PlayerPosition.BACK_ROOM : PlayerPosition.FRONT_ROOM;
             updateUIVisibility();
             officePanel.repaint();
         };
@@ -1075,14 +780,14 @@ public class GameGUI extends JPanel implements ResourceManaged {
         am.put("spamSpace", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (isGameOver) return;
+                if ((currentState == GameState.GAMEOVER)) return;
                 // Prioritas 1: QTE Lockpick
                 if (qteActive && lockpickPopupPanel.isVisible()) {
                     handleQteHit();
                     return;
                 }
                 // Prioritas 2: Struggle QTE
-                if (isStruggling) {
+                if ((currentState == GameState.STRUGGLING)) {
                     struggleValue += 15;
                     if (struggleValue >= 100)
                         checkStruggleWin();
@@ -1127,7 +832,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         am.put("hideCabinet", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (isGameOver || !isLookingBack || isHidden || lockpickPopupPanel.isVisible())
+                if ((currentState == GameState.GAMEOVER) || !(currentPosition == PlayerPosition.BACK_ROOM) || (currentPosition == PlayerPosition.CABINET) || lockpickPopupPanel.isVisible())
                     return;
                 enterCabinet();
             }
@@ -1141,7 +846,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         AbstractAction sAction = new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (isGameOver)
+                if ((currentState == GameState.GAMEOVER))
                     return;
 
                 if (lockpickPopupPanel.isVisible()) {
@@ -1150,10 +855,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
                     lockpickPopupPanel.setVisible(false);
                     updateUIVisibility();
                     logEvent("🔧 [INTERACT] Kamu mundur dari gembok.");
-                } else if (isHidden && !isStruggling) {
+                } else if ((currentPosition == PlayerPosition.CABINET) && !(currentState == GameState.STRUGGLING)) {
                     // Keluar kabinet
                     exitCabinet();
-                } else if (isLookingBack && !isHidden) {
+                } else if ((currentPosition == PlayerPosition.BACK_ROOM) && !(currentPosition == PlayerPosition.CABINET)) {
                     // Buka lockpick pintu belakang + start QTE
                     logEvent("🔧 [INTERACT] Mendekat ke gembok untuk mencongkel...");
                     lockpickPopupPanel.setVisible(true);
@@ -1175,7 +880,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         gameLoopTimer = new Timer(1200, e -> processGameTick());
 
         lockDrainTimer = new Timer(3000, e -> {
-            if (!isGameOver && !lockpickPopupPanel.isVisible() && lockBars > 0) {
+            if (!(currentState == GameState.GAMEOVER) && !lockpickPopupPanel.isVisible() && lockBars > 0) {
                 lockBars--;
                 logEvent("⚠️ [PENALTY] Progres gembok menurun (" + lockBars + "/6 bar).");
             }
@@ -1183,7 +888,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     private void processGameTick() {
-        if (isGameOver || isStruggling || isRetreating)
+        if ((currentState == GameState.GAMEOVER) || (currentState == GameState.STRUGGLING) || isRetreating)
             return;
 
         if (areEnemiesActive) {
@@ -1245,7 +950,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 player.setLeftDoorClosed(true);
                 AudioManager.playSound("/assets/audio/sfx/door_close.wav");
                 updateDoorVisuals();
-                hidEarly = isHidden;
+                hidEarly = (currentPosition == PlayerPosition.CABINET);
             }
 
             // Phase 3: Critical Danger (patience == 1)
@@ -1257,7 +962,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
             }
 
             if (enemy.getPatienceTimer() <= 0) {
-                if (isHidden) {
+                if ((currentPosition == PlayerPosition.CABINET)) {
                     if (hidEarly) {
                         logEvent("👤 [SAFE] Kamu sudah bersembunyi tepat waktu. The Red One pergi.");
                         AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
@@ -1292,7 +997,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         // If player is ALREADY hiding at this point, they're safe (no QTE)
         if (enemy.getPatienceTimer() == 3) {
             logEvent("🕷️ Hina muncul sebagian dari lubang ventilasi...");
-            if (isHidden) {
+            if ((currentPosition == PlayerPosition.CABINET)) {
                 hidEarly = true; // Player hid before Idle in Front → safe
             }
             updateDoorVisuals();
@@ -1309,7 +1014,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
             logEvent("👁️ Hina berdiri di depanmu! Dia menatapmu dari celah ventilasi!");
             AudioManager.playSound("/assets/audio/sfx/door_close.wav");
             // Only mark as hidEarly if player was already hiding BEFORE this phase
-            if (isHidden && !hidEarly) {
+            if ((currentPosition == PlayerPosition.CABINET) && !hidEarly) {
                 hidEarly = false; // Player hid too late → QTE will trigger
             }
             updateDoorVisuals();
@@ -1325,7 +1030,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
         // Phase 3: Execution (patience <= 0)
         if (enemy.getPatienceTimer() <= 0) {
-            if (isHidden) {
+            if ((currentPosition == PlayerPosition.CABINET)) {
                 if (hidEarly) {
                     // Player hid during Phase 1 (Show Up on Vent) → safe, NO QTE
                     logEvent("👤 [SAFE] Kamu bersembunyi sebelum Hina mendekat. Dia kembali ke vent.");
@@ -1384,7 +1089,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     // ============================================================
 
     private void startStruggle(Enemy enemy) {
-        if (isStruggling)
+        if ((currentState == GameState.STRUGGLING))
             return;
 
         if (!loadQteAssets(enemy)) {
@@ -1393,7 +1098,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
             return;
         }
 
-        isStruggling = true;
+        currentState = GameState.STRUGGLING;
         currentAttacker = enemy;
         struggleValue = 40;
         struggleAnimCounter = 0;
@@ -1406,7 +1111,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         officePanel.repaint();
 
         struggleTimer = new Timer(100, e -> {
-            if (!isStruggling || isGameOver) {
+            if (!(currentState == GameState.STRUGGLING) || (currentState == GameState.GAMEOVER)) {
                 ((Timer) e.getSource()).stop();
                 return;
             }
@@ -1415,11 +1120,11 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
             if (struggleValue <= 0) {
                 ((Timer) e.getSource()).stop();
-                isStruggling = false;
-                isHidden = false;
+                currentState = GameState.PLAYING;
+                currentPosition = PlayerPosition.BACK_ROOM;
 
-                // ✨ FIX: Set isGameOver and stop timers immediately to prevent double jumpscare
-                isGameOver = true;
+                // ✨ FIX: Set (currentState == GameState.GAMEOVER) and stop timers immediately to prevent double jumpscare
+                currentState = GameState.GAMEOVER;
                 gameLoopTimer.stop();
                 if (lockDrainTimer != null) lockDrainTimer.stop();
 
@@ -1438,10 +1143,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     private void checkStruggleWin() {
-        if (isStruggling && struggleValue >= 100) {
+        if ((currentState == GameState.STRUGGLING) && struggleValue >= 100) {
             if (struggleTimer != null)
                 struggleTimer.stop();
-            isStruggling = false;
+            currentState = GameState.PLAYING;
             struggleValue = 100;
             logEvent("👤 [SAFE] Kamu berhasil menahan pintunya! " +
                     currentAttacker.getName() + " menyerah dan pergi.");
@@ -1508,9 +1213,9 @@ public class GameGUI extends JPanel implements ResourceManaged {
     // ============================================================
 
     private void initiateJumpscareSequence(Enemy enemy) {
-        if (isGameOver)
+        if ((currentState == GameState.GAMEOVER))
             return;
-        isGameOver = true;
+        currentState = GameState.GAMEOVER;
         gameLoopTimer.stop();
         if (lockDrainTimer != null)
             lockDrainTimer.stop();
@@ -1591,8 +1296,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
     // ============================================================
 
     private void endGame(String title, String msg, Color titleColor, Enemy killer) {
-        if (!isGameOver)
-            isGameOver = true;
+        if (!(currentState == GameState.GAMEOVER))
+            currentState = GameState.GAMEOVER;
         gameLoopTimer.stop();
         if (lockDrainTimer != null)
             lockDrainTimer.stop();
@@ -1669,14 +1374,14 @@ public class GameGUI extends JPanel implements ResourceManaged {
     }
 
     private void updateUIVisibility() {
-        if (isGameOver)
+        if ((currentState == GameState.GAMEOVER))
             return;
         boolean isLockpickOpen = lockpickPopupPanel.isVisible();
-        boolean isFront = !isLookingBack;
+        boolean isFront = !(currentPosition == PlayerPosition.BACK_ROOM);
 
         btnDoor.setVisible(false); // ✨ Selalu false sesuai permintaan (player tidak kontrol pintu)
-        btnLookLeft.setVisible(!isLockpickOpen && !isHidden);
-        btnLookRight.setVisible(!isLockpickOpen && !isHidden);
+        btnLookLeft.setVisible(!isLockpickOpen && !(currentPosition == PlayerPosition.CABINET));
+        btnLookRight.setVisible(!isLockpickOpen && !(currentPosition == PlayerPosition.CABINET));
     }
 
     private Enemy getEnemyAtDoor() {
@@ -1706,4 +1411,27 @@ public class GameGUI extends JPanel implements ResourceManaged {
         if (quoteTimer != null && quoteTimer.isRunning()) quoteTimer.stop();
         if (flickerTimer != null && flickerTimer.isRunning()) flickerTimer.stop();
     }
+
+    // ============================================================
+    // GETTERS FOR RENDERER
+    // ============================================================
+    public GameState getCurrentState() { return currentState; }
+    public PlayerPosition getCurrentPosition() { return currentPosition; }
+    public float getVignetteIntensity() { return vignetteIntensity; }
+    public boolean isFlickering() { return isFlickering; }
+    public float getFlickerAlpha() { return flickerAlpha; }
+    public boolean isRetreating() { return isRetreating; }
+    public EnemyOdd getEnemyA() { return enemyA; }
+    public EnemyEven getEnemyB() { return enemyB; }
+    public Image getDoorEnemyVisual() { return doorEnemyVisual; }
+    public Player getPlayer() { return player; }
+    public int getLockBars() { return lockBars; }
+    public Image getRetreatImg() { return retreatImg; }
+    public Enemy getLastDefeatedEnemy() { return lastDefeatedEnemy; }
+    public int getRetreatAnimTicks() { return retreatAnimTicks; }
+    public Image getQteBodyImg() { return qteBodyImg; }
+    public Image getQteHandLeftImg() { return qteHandLeftImg; }
+    public Image getQteHandRightImg() { return qteHandRightImg; }
+    public int getStruggleValue() { return struggleValue; }
+    public java.util.List<String> getDevLogs() { return devLogs; }
 }
