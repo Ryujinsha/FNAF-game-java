@@ -37,7 +37,7 @@ public class MainFrame extends JFrame {
     }
 
     public MainFrame() {
-        setTitle("Night Shift Survival");
+        setTitle("The Last Door");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(800, 450));
         setSize(1300, 900); // ✨ Fallback size agar layout punya ukuran awal

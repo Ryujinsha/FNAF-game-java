@@ -25,7 +25,7 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
         // Tambahkan halaman-halaman menu
         mainContainer.add(createMainMenuPanel(), "MAIN");
         mainContainer.add(createSettingsPanel(), "SETTINGS");
-        mainContainer.add(createAchievementsPanel(), "ACHIEVEMENTS");
+        mainContainer.add(createAboutPanel(), "ABOUT");
 
         cardLayout.show(mainContainer, "MAIN");
 
@@ -38,29 +38,28 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
     // ============================================================
     private JPanel createMainMenuPanel() {
         JPanel panel = new JPanel() {
-            private Image enemyImage;
+            private Image bgImage;
             {
-                // ✨ FIX: Menggunakan AssetCache agar lebih ringan
-                enemyImage = AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png");
+                bgImage = AssetCache.get("/assets/backgrounds/main_menu_bg.png");
             }
 
             @Override
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                g.setColor(Color.BLACK);
-                g.fillRect(0, 0, getWidth(), getHeight());
+                Graphics2D g2d = (Graphics2D) g;
+                g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-                if (enemyImage != null) {
-                    int imgWidth = 450;
-                    int imgHeight = 650;
-                    int x = (getWidth() - imgWidth) / 2;
-                    int y = (getHeight() - imgHeight) / 2 - 50;
-                    g.drawImage(enemyImage, x, y, imgWidth, imgHeight, this);
+                if (bgImage != null) {
+                    g2d.drawImage(bgImage, 0, 0, getWidth(), getHeight(), this);
+                } else {
+                    g2d.setColor(Color.BLACK);
+                    g2d.fillRect(0, 0, getWidth(), getHeight());
                 }
                 
-                // Overlay gelap sedikit agar teks terbaca
-                g.setColor(new Color(0, 0, 0, 80));
-                g.fillRect(0, 0, getWidth(), getHeight());
+                // Vignette/Overlay gradient for better atmosphere
+                GradientPaint gp = new GradientPaint(0, 0, new Color(0, 0, 0, 100), 0, getHeight(), new Color(0, 0, 0, 200));
+                g2d.setPaint(gp);
+                g2d.fillRect(0, 0, getWidth(), getHeight());
             }
         };
         panel.setLayout(new GridBagLayout());
@@ -69,33 +68,62 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
         uiPanel.setOpaque(false);
         uiPanel.setLayout(new BoxLayout(uiPanel, BoxLayout.Y_AXIS));
 
-        JLabel titleLabel = new JLabel("NIGHT SHIFT SURVIVAL");
-        titleLabel.setFont(new Font("Consolas", Font.BOLD, 75));
-        titleLabel.setForeground(Color.RED);
+        JLabel titleLabel = new JLabel("THE LAST DOOR");
+        titleLabel.setFont(new Font("Serif", Font.BOLD | Font.ITALIC, 110));
+        titleLabel.setForeground(new Color(150, 0, 0));
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        
+        // Add shadow effect to title using HTML
+        titleLabel.setText("<html><body style='text-shadow: 5px 5px 10px #000000;'>THE LAST DOOR</body></html>");
 
-        JButton btnPlay = createStyledButton("START SHIFT", Color.GREEN);
-        JButton btnSettings = createStyledButton("SETTINGS", Color.WHITE);
-        JButton btnAchievements = createStyledButton("ACHIEVEMENTS", Color.YELLOW);
-        JButton btnQuit = createStyledButton("QUIT", Color.LIGHT_GRAY);
+        JButton btnStory = createStyledButton("STORY", Color.WHITE);
+        JButton btnEndless = createStyledButton("ENDLESS", Color.LIGHT_GRAY);
+        JButton btnSetting = createStyledButton("SETTING", Color.WHITE);
+        JButton btnAbout = createStyledButton("ABOUT", Color.WHITE);
+        JButton btnQuit = createStyledButton("QUIT", Color.RED);
 
-        btnPlay.addActionListener(e -> mainFrame.showScreen("CUTSCENE"));
-        btnSettings.addActionListener(e -> cardLayout.show(mainContainer, "SETTINGS"));
-        btnAchievements.addActionListener(e -> cardLayout.show(mainContainer, "ACHIEVEMENTS"));
+        btnStory.addActionListener(e -> mainFrame.showScreen("CUTSCENE"));
+        btnEndless.addActionListener(e -> JOptionPane.showMessageDialog(this, "Endless Mode - Coming Soon!", "Info", JOptionPane.INFORMATION_MESSAGE));
+        btnSetting.addActionListener(e -> cardLayout.show(mainContainer, "SETTINGS"));
+        btnAbout.addActionListener(e -> cardLayout.show(mainContainer, "ABOUT"));
         btnQuit.addActionListener(e -> System.exit(0));
 
-        uiPanel.add(Box.createVerticalStrut(350));
+        uiPanel.add(Box.createVerticalStrut(250));
         uiPanel.add(titleLabel);
-        uiPanel.add(Box.createVerticalStrut(60));
-        uiPanel.add(btnPlay);
+        uiPanel.add(Box.createVerticalStrut(80));
+        uiPanel.add(btnStory);
         uiPanel.add(Box.createVerticalStrut(15));
-        uiPanel.add(btnSettings);
+        uiPanel.add(btnEndless);
         uiPanel.add(Box.createVerticalStrut(15));
-        uiPanel.add(btnAchievements);
+        uiPanel.add(btnSetting);
+        uiPanel.add(Box.createVerticalStrut(15));
+        uiPanel.add(btnAbout);
         uiPanel.add(Box.createVerticalStrut(15));
         uiPanel.add(btnQuit);
 
         panel.add(uiPanel);
+
+        // --- Pojok Kanan Atas: Profile & Leaderboard ---
+        JPanel topRightPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 20, 20));
+        topRightPanel.setOpaque(false);
+        
+        JButton btnProfile = createSmallStyledButton("PROFILE");
+        JButton btnLeaderboard = createSmallStyledButton("LEADERBOARD");
+        
+        btnProfile.addActionListener(e -> JOptionPane.showMessageDialog(this, "Profile - Coming Soon!", "Info", JOptionPane.INFORMATION_MESSAGE));
+        btnLeaderboard.addActionListener(e -> JOptionPane.showMessageDialog(this, "Leaderboard - Coming Soon!", "Info", JOptionPane.INFORMATION_MESSAGE));
+        
+        topRightPanel.add(btnProfile);
+        topRightPanel.add(btnLeaderboard);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.anchor = GridBagConstraints.FIRST_LINE_END;
+        panel.add(topRightPanel, gbc);
+
         return panel;
     }
 
@@ -135,27 +163,31 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
     }
 
     // ============================================================
-    // 3. HALAMAN PENCAPAIAN (ACHIEVEMENTS)
+    // 3. HALAMAN ABOUT
     // ============================================================
-    private JPanel createAchievementsPanel() {
+    private JPanel createAboutPanel() {
         JPanel panel = new JPanel(new BorderLayout());
-        panel.setBackground(new Color(15, 15, 15));
+        panel.setBackground(new Color(10, 10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(50, 100, 50, 100));
 
-        JLabel title = new JLabel("ACHIEVEMENTS", SwingConstants.CENTER);
-        title.setFont(new Font("Consolas", Font.BOLD, 60));
-        title.setForeground(Color.YELLOW);
+        JLabel title = new JLabel("ABOUT", SwingConstants.CENTER);
+        title.setFont(new Font("Serif", Font.BOLD, 60));
+        title.setForeground(Color.WHITE);
         panel.add(title, BorderLayout.NORTH);
 
-        JPanel listPanel = new JPanel(new GridLayout(0, 1, 10, 10));
-        listPanel.setOpaque(false);
-        
-        listPanel.add(createAchievementItem("First Night", "Selesaikan malam pertama kamu.", true));
-        listPanel.add(createAchievementItem("Ninja Guard", "Bersembunyi 10 kali tanpa tertangkap.", false));
-        listPanel.add(createAchievementItem("Master Thief", "Berhasil mencongkel pintu tercepat.", false));
-        listPanel.add(createAchievementItem("Survivor", "Selesaikan game dalam tingkat kesulitan HARD.", false));
+        JTextArea aboutText = new JTextArea();
+        aboutText.setText("THE LAST DOOR\n\n" +
+                "Seorang anak muda penasaran dengan sebuah rumah tua. Namun, setelah dia masuk kedalamnya itu merupakan awal mula mimpi buruk.\n\n" +
+                "Tak sadar rumah itu mengunci dirinnya dan semua akses keluar tertutup. Tak hanya itu, dia merasakan ada sesosok makhluk misterius yang mencoba menangkapnya.\n\n" +
+                "Menyadari ada penyusup, dia menemukan satu satunya pintu selain pintu utama untuk melarikan diri. Dia harus berusaha membuka gembok di pintu misterius itu sambil mengawasi makhluk yang ingin menangkapnya.");
+        aboutText.setFont(new Font("Consolas", Font.PLAIN, 20));
+        aboutText.setForeground(Color.LIGHT_GRAY);
+        aboutText.setOpaque(false);
+        aboutText.setEditable(false);
+        aboutText.setLineWrap(true);
+        aboutText.setWrapStyleWord(true);
 
-        JScrollPane scroll = new JScrollPane(listPanel);
+        JScrollPane scroll = new JScrollPane(aboutText);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(null);
@@ -174,12 +206,56 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
 
     private JButton createStyledButton(String text, Color color) {
         JButton btn = new JButton(text);
-        btn.setFont(new Font("Consolas", Font.BOLD, 28));
-        btn.setBackground(new Color(40, 40, 40));
+        btn.setFont(new Font("Monospaced", Font.BOLD, 32));
         btn.setForeground(color);
         btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
         btn.setAlignmentX(Component.CENTER_ALIGNMENT);
-        btn.setMaximumSize(new Dimension(500, 50));
+        btn.setMaximumSize(new Dimension(600, 60));
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        // Hover Effect
+        btn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                btn.setForeground(new Color(255, 50, 50));
+                btn.setText("> " + text + " <");
+                AudioManager.playSound("/assets/audio/sfx/button_click.wav"); // Subtle sound on hover if available
+            }
+
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                btn.setForeground(color);
+                btn.setText(text);
+            }
+        });
+
+        return btn;
+    }
+
+    private JButton createSmallStyledButton(String text) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("Monospaced", Font.BOLD, 18));
+        btn.setForeground(Color.GRAY);
+        btn.setFocusPainted(false);
+        btn.setBorderPainted(false);
+        btn.setContentAreaFilled(false);
+        btn.setOpaque(false);
+        btn.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+        btn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                btn.setForeground(Color.WHITE);
+                AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+            }
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                btn.setForeground(Color.GRAY);
+            }
+        });
         return btn;
     }
 
@@ -225,29 +301,6 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
         return row;
     }
 
-    private JPanel createAchievementItem(String name, String desc, boolean unlocked) {
-        JPanel item = new JPanel(new BorderLayout());
-        item.setBackground(new Color(30, 30, 30));
-        item.setBorder(BorderFactory.createLineBorder(unlocked ? Color.YELLOW : Color.DARK_GRAY, 2));
-        
-        JPanel text = new JPanel(new GridLayout(2, 1));
-        text.setOpaque(false);
-        text.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 20));
-        
-        JLabel nameLbl = new JLabel(name + (unlocked ? " [COMPLETED]" : " [LOCKED]"));
-        nameLbl.setFont(new Font("Consolas", Font.BOLD, 22));
-        nameLbl.setForeground(unlocked ? Color.YELLOW : Color.GRAY);
-        
-        JLabel descLbl = new JLabel(desc);
-        descLbl.setFont(new Font("Consolas", Font.PLAIN, 16));
-        descLbl.setForeground(Color.LIGHT_GRAY);
-        
-        text.add(nameLbl);
-        text.add(descLbl);
-        item.add(text, BorderLayout.CENTER);
-        
-        return item;
-    }
     @Override
     public void stopAllProcesses() {
         System.out.println("[MENU] Stopping Menu Processes...");
