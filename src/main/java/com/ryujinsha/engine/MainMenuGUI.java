@@ -168,29 +168,65 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
     private JPanel createAboutPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(new Color(10, 10, 10));
-        panel.setBorder(BorderFactory.createEmptyBorder(50, 100, 50, 100));
+        panel.setBorder(BorderFactory.createEmptyBorder(30, 50, 30, 50));
 
-        JLabel title = new JLabel("ABOUT", SwingConstants.CENTER);
-        title.setFont(new Font("Serif", Font.BOLD, 60));
+        JLabel title = new JLabel("CREDITS", SwingConstants.CENTER);
+        title.setFont(new Font("Serif", Font.BOLD, 50));
         title.setForeground(Color.WHITE);
         panel.add(title, BorderLayout.NORTH);
 
-        JTextArea aboutText = new JTextArea();
-        aboutText.setText("THE LAST DOOR\n\n" +
-                "Seorang anak muda penasaran dengan sebuah rumah tua. Namun, setelah dia masuk kedalamnya itu merupakan awal mula mimpi buruk.\n\n" +
-                "Tak sadar rumah itu mengunci dirinnya dan semua akses keluar tertutup. Tak hanya itu, dia merasakan ada sesosok makhluk misterius yang mencoba menangkapnya.\n\n" +
-                "Menyadari ada penyusup, dia menemukan satu satunya pintu selain pintu utama untuk melarikan diri. Dia harus berusaha membuka gembok di pintu misterius itu sambil mengawasi makhluk yang ingin menangkapnya.");
-        aboutText.setFont(new Font("Consolas", Font.PLAIN, 20));
-        aboutText.setForeground(Color.LIGHT_GRAY);
-        aboutText.setOpaque(false);
-        aboutText.setEditable(false);
-        aboutText.setLineWrap(true);
-        aboutText.setWrapStyleWord(true);
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setOpaque(false);
 
-        JScrollPane scroll = new JScrollPane(aboutText);
+        // Developer Section
+        JLabel devTitle = new JLabel("DEVELOPMENT TEAM");
+        devTitle.setFont(new Font("Consolas", Font.BOLD, 24));
+        devTitle.setForeground(Color.LIGHT_GRAY);
+        devTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        contentPanel.add(Box.createVerticalStrut(20));
+        contentPanel.add(devTitle);
+        contentPanel.add(Box.createVerticalStrut(20));
+
+        JPanel gridPanel = new JPanel(new GridLayout(3, 2, 20, 20));
+        gridPanel.setOpaque(false);
+        gridPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        String devImg = "/assets/dev/dev.jpg";
+        gridPanel.add(createDevCard("Krisna Dean Noven", "Project Manager", devImg));
+        gridPanel.add(createDevCard("Muhammad Faried", "Game Developer", devImg));
+        gridPanel.add(createDevCard("Galang Sukmagama", "Game Designer", devImg));
+        gridPanel.add(createDevCard("Raihan Nazriel", "QA Tester", devImg));
+        gridPanel.add(createDevCard("Nadia Zahra A.", "Game Designer", devImg));
+        
+        contentPanel.add(gridPanel);
+
+        // Campus Tribute Section
+        contentPanel.add(Box.createVerticalStrut(40));
+        JLabel campusTitle = new JLabel("TRIBUTE TO CAMPUS");
+        campusTitle.setFont(new Font("Consolas", Font.BOLD, 24));
+        campusTitle.setForeground(Color.LIGHT_GRAY);
+        campusTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        contentPanel.add(campusTitle);
+        contentPanel.add(Box.createVerticalStrut(20));
+
+        Image campusImg = com.ryujinsha.system.AssetCache.get("/assets/dev/horizon.png");
+        if (campusImg != null) {
+            // Skala logo kampus menjadi ukuran yang pantas
+            int targetWidth = 300;
+            int targetHeight = (campusImg.getHeight(null) * targetWidth) / Math.max(1, campusImg.getWidth(null));
+            JLabel campusLabel = new JLabel(new ImageIcon(campusImg.getScaledInstance(targetWidth, targetHeight, Image.SCALE_SMOOTH)));
+            campusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+            contentPanel.add(campusLabel);
+        }
+
+        JScrollPane scroll = new JScrollPane(contentPanel);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         scroll.setBorder(null);
+        // Scrollbar tidak terlihat tapi bisa di scroll
+        scroll.getVerticalScrollBar().setPreferredSize(new Dimension(0,0));
+        
         panel.add(scroll, BorderLayout.CENTER);
 
         JButton btnBack = createStyledButton("BACK TO MENU", Color.RED);
@@ -198,6 +234,39 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
         panel.add(btnBack, BorderLayout.SOUTH);
 
         return panel;
+    }
+
+    private JPanel createDevCard(String name, String role, String imgPath) {
+        JPanel card = new JPanel(new BorderLayout(15, 10));
+        card.setOpaque(false);
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(new Color(50, 50, 50), 2),
+            BorderFactory.createEmptyBorder(10, 10, 10, 10)
+        ));
+
+        Image img = com.ryujinsha.system.AssetCache.get(imgPath);
+        if (img != null) {
+            // Resize menjadi bulat/kotak kecil
+            Image scaled = img.getScaledInstance(80, 80, Image.SCALE_SMOOTH);
+            card.add(new JLabel(new ImageIcon(scaled)), BorderLayout.WEST);
+        }
+
+        JPanel textPanel = new JPanel(new GridLayout(2, 1));
+        textPanel.setOpaque(false);
+        
+        JLabel nameLabel = new JLabel(name);
+        nameLabel.setFont(new Font("Consolas", Font.BOLD, 18));
+        nameLabel.setForeground(Color.WHITE);
+        
+        JLabel roleLabel = new JLabel(role);
+        roleLabel.setFont(new Font("Consolas", Font.PLAIN, 14));
+        roleLabel.setForeground(Color.RED);
+
+        textPanel.add(nameLabel);
+        textPanel.add(roleLabel);
+
+        card.add(textPanel, BorderLayout.CENTER);
+        return card;
     }
 
     // ============================================================
