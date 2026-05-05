@@ -84,10 +84,16 @@ public class MainFrame extends JFrame {
         containerPanel.add(new MainMenuGUI(this), "MENU");
 
         // ============================================================
-        // FORCE MAXIMIZE — dipanggil setelah setup selesai
+        // FORCE FULLSCREEN — dipanggil setelah setup selesai
         // ============================================================
-        // ✨ Panggil di akhir agar layout sudah siap saat maximize
-        setExtendedState(JFrame.MAXIMIZED_BOTH);
+        setUndecorated(true);
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        GraphicsDevice gd = ge.getDefaultScreenDevice();
+        if (gd.isFullScreenSupported()) {
+            gd.setFullScreenWindow(this);
+        } else {
+            setExtendedState(JFrame.MAXIMIZED_BOTH);
+        }
     }
 
     // ============================================================

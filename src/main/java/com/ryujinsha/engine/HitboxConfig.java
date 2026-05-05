@@ -122,4 +122,11 @@ public class HitboxConfig {
 
     /** Offset horizontal maksimum tangan saat QTE (membuka lebar) */
     public static final int QTE_HAND_SLIDE_MAX = 150;
+
+    // ============================================================
+    // HALLWAY PHASE — Fase Lorong Awal
+    // ============================================================
+    public static final Rectangle HALLWAY_CABINET_HITBOX = new Rectangle(300, 600, 500, 800);
+    public static final Rectangle HALLWAY_TABLE_HITBOX = new Rectangle(2000, 700, 600, 600);
+    public static final Rectangle HALLWAY_DOOR_HITBOX = new Rectangle(1100, 200, 600, 1100);
 }

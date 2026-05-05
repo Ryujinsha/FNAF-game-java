@@ -107,12 +107,30 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private boolean hasFlickeredForDanger = false; // ✨ BARU: Flag untuk flicker peringatan terakhir (patience 1)
     private java.util.List<String> devLogs = new java.util.ArrayList<>(); // ✨ BARU: Cache log untuk Dev Mode
 
+    // ✨ BARU: Incoming Stage fields
+    private boolean incomingDialogVisible = false;
+    private Timer incomingTimer;
+
+    // ✨ BARU: Hallway Stage fields
+    private boolean hasHallwayKey = false;
+    private boolean hallwayCutsceneActive = false;
+    private int hallwayCutsceneIndex = 0;
+    private String[] hallwayCutsceneTexts = {
+        "Kamu merasa sendirian. Namun, tidak ada jalan kembali",
+        "Kamu berlari sampai kau menuju sebuah ruangan kecil. Kamu mendengar suara serangga dan kamu berasumsi kamu akan bebas",
+        "Namun, tidak semudah itu. Mereka marah dan ingin menyerangmu"
+    };
+    private String currentDisplayedText = "";
+    private Timer typingTimer;
+    private int typingCharIndex = 0;
+
     // Path konstanta aset ruangan
     private static final String PATH_FRONT_ROOM = "/assets/rooms/front_room.png";
     private static final String PATH_FRONT_DOOR = "/assets/rooms/front_door.png";
     private static final String PATH_BACK_DOOR = "/assets/rooms/back_door.png";
     private static final String PATH_BACK_DOOR_OPENED = "/assets/rooms/back_door_opened.png";
     private static final String PATH_LOCK_DOOR = "/assets/rooms/lock_door.png";
+    private static final String PATH_HALLWAY = "/assets/rooms/hallway.png";
 
     // ============================================================
     // CONSTRUCTOR
@@ -146,9 +164,13 @@ public class GameGUI extends JPanel implements ResourceManaged {
         this.enemyA = new EnemyOdd("The Red One", 20);
         this.enemyB = new EnemyEven("Hina", 20);
 
-        this.areEnemiesActive = true;
-        this.currentState = GameState.PLAYING;
+        this.areEnemiesActive = false; // ✨ Default false untuk babak INCOMING
+        this.currentState = GameState.HALLWAY;
         this.currentPosition = PlayerPosition.FRONT_ROOM;
+        this.incomingDialogVisible = true;
+        this.hasHallwayKey = false;
+        this.hallwayCutsceneActive = false;
+        this.hallwayCutsceneIndex = 0;
         this.lockBars = 0;
         this.qteIndicatorPos = 0.0;
         this.qteDirection = 1;
@@ -182,6 +204,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 PATH_BACK_DOOR,
                 PATH_BACK_DOOR_OPENED,
                 PATH_LOCK_DOOR,
+                PATH_HALLWAY,
                 "/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png",
                 "/assets/enemies/enemy_a_door/idle/the-red-idle-phase-2.png",
                 "/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
@@ -268,10 +291,22 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 if (gamePoint.x < 0)
                     return;
 
-                // Prioritas 3: Interaksi di back room
-                if ((currentPosition == PlayerPosition.BACK_ROOM) && !lockpickPopupPanel.isVisible()) {
-                    handleBackRoomClick(gamePoint);
+                // Prioritas 2.1: Klik di Hallway
+                if (currentState == GameState.HALLWAY) {
+                    if (incomingDialogVisible) {
+                        incomingDialogVisible = false;
+                        officePanel.repaint();
+                        return;
+                    }
+                    if (hallwayCutsceneActive) {
+                        advanceHallwayCutscene();
+                    } else {
+                        handleHallwayClick(gamePoint);
+                    }
+                    return;
                 }
+
+                // Prioritas 3: Interaksi di back room
             }
         });
     }
@@ -298,7 +333,6 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
     private void enterCabinet() {
         currentPosition = PlayerPosition.CABINET;
-        currentPosition = PlayerPosition.FRONT_ROOM;
 
         // Tentukan apakah bersembunyi "lebih awal" (aman) atau telat (QTE)
         Enemy attacker = getEnemyAtDoor();
@@ -498,6 +532,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
     /** Mulai QTE: reset indikator dan mulai timer animasi. */
     private void startQte() {
+        if (currentState == GameState.INCOMING) {
+            switchToActualGame();
+        }
+        
         qteIndicatorPos = 0.0;
         qteDirection = 1;
         qteActive = true;
@@ -890,6 +928,13 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private void processGameTick() {
         if ((currentState == GameState.GAMEOVER) || (currentState == GameState.STRUGGLING) || isRetreating)
             return;
+
+        if (currentState == GameState.HALLWAY) {
+            if (Math.random() < 0.1 && !isFlickering) {
+                startFlickerEffect();
+            }
+            return;
+        }
 
         if (areEnemiesActive) {
             // ✨ MODIFIKASI: Logika "Satu Per Satu" — Musuh hanya bisa maju jika pintu kosong.
@@ -1359,6 +1404,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
             gameLoopTimer.stop();
         if (flickerTimer != null && flickerTimer.isRunning())
             flickerTimer.stop();
+        if (typingTimer != null && typingTimer.isRunning())
+            typingTimer.stop();
     }
 
     // ============================================================
@@ -1368,9 +1415,107 @@ public class GameGUI extends JPanel implements ResourceManaged {
     public void startGame() {
         this.requestFocusInWindow();
         updateUIVisibility();
-        gameLoopTimer.start();
-        if (lockDrainTimer != null)
-            lockDrainTimer.start();
+
+        if (currentState == GameState.INCOMING) {
+            // Babak Incoming: enemies tidak aktif, ada dialog singkat
+            incomingDialogVisible = true;
+            logEvent("🎬 [INCOMING] Prolog dimulai...");
+            
+            // Timer 7 detik untuk dialog prolog, setelah itu game asli dimulai
+            incomingTimer = new Timer(7000, e -> switchToActualGame());
+            incomingTimer.setRepeats(false);
+            incomingTimer.start();
+        } else {
+            gameLoopTimer.start();
+            if (lockDrainTimer != null)
+                lockDrainTimer.start();
+        }
+    }
+
+    /**
+     * Transisi dari babak Incoming ke Actual Game (PLAYING).
+     */
+    private void switchToActualGame() {
+        if (currentState != GameState.INCOMING) return;
+        
+        if (incomingTimer != null && incomingTimer.isRunning())
+            incomingTimer.stop();
+            
+        currentState = GameState.PLAYING;
+        areEnemiesActive = true;
+        incomingDialogVisible = false;
+        
+        logEvent("🎮 [ACTUAL GAME] Shift malam dimulai! Musuh aktif.");
+        
+        if (!gameLoopTimer.isRunning()) gameLoopTimer.start();
+        if (!lockDrainTimer.isRunning()) lockDrainTimer.start();
+        
+        officePanel.repaint();
+    }
+
+    private void handleHallwayClick(Point gamePoint) {
+        if (RenderEngine.hitboxContains(HitboxConfig.HALLWAY_CABINET_HITBOX, gamePoint) ||
+            RenderEngine.hitboxContains(HitboxConfig.HALLWAY_TABLE_HITBOX, gamePoint)) {
+            if (!hasHallwayKey) {
+                hasHallwayKey = true;
+                logEvent("🗝️ [ITEM] Kamu menemukan kunci!");
+                AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+            } else {
+                logEvent("🔍 Kamu sudah mengambil kunci dari sini.");
+            }
+        } else if (RenderEngine.hitboxContains(HitboxConfig.HALLWAY_DOOR_HITBOX, gamePoint)) {
+            if (hasHallwayKey) {
+                logEvent("🚪 [INTERACT] Membuka pintu besar...");
+                AudioManager.playSound("/assets/audio/sfx/door_open.wav");
+                startHallwayCutscene();
+            } else {
+                logEvent("🔒 Pintu terkunci. Kamu butuh kunci.");
+            }
+        }
+        officePanel.repaint();
+    }
+
+    private void startHallwayCutscene() {
+        hallwayCutsceneActive = true;
+        hallwayCutsceneIndex = 0;
+        incomingDialogVisible = false;
+        startTypingText();
+        officePanel.repaint();
+    }
+
+    private void advanceHallwayCutscene() {
+        if (typingTimer != null && typingTimer.isRunning()) {
+            typingTimer.stop();
+            currentDisplayedText = hallwayCutsceneTexts[hallwayCutsceneIndex];
+        } else {
+            hallwayCutsceneIndex++;
+            if (hallwayCutsceneIndex >= hallwayCutsceneTexts.length) {
+                hallwayCutsceneActive = false;
+                currentState = GameState.INCOMING; // Transition to original prolog
+                startGame(); // Restart timing for incoming
+            } else {
+                startTypingText();
+            }
+        }
+        officePanel.repaint();
+    }
+
+    private void startTypingText() {
+        if (typingTimer != null && typingTimer.isRunning()) typingTimer.stop();
+        currentDisplayedText = "";
+        typingCharIndex = 0;
+        String targetText = hallwayCutsceneTexts[hallwayCutsceneIndex];
+        
+        typingTimer = new Timer(50, e -> {
+            if (typingCharIndex < targetText.length()) {
+                currentDisplayedText += targetText.charAt(typingCharIndex);
+                typingCharIndex++;
+                officePanel.repaint();
+            } else {
+                ((Timer)e.getSource()).stop();
+            }
+        });
+        typingTimer.start();
     }
 
     private void updateUIVisibility() {
@@ -1378,10 +1523,11 @@ public class GameGUI extends JPanel implements ResourceManaged {
             return;
         boolean isLockpickOpen = lockpickPopupPanel.isVisible();
         boolean isFront = !(currentPosition == PlayerPosition.BACK_ROOM);
+        boolean isHallway = (currentState == GameState.HALLWAY);
 
         btnDoor.setVisible(false); // ✨ Selalu false sesuai permintaan (player tidak kontrol pintu)
-        btnLookLeft.setVisible(!isLockpickOpen && !(currentPosition == PlayerPosition.CABINET));
-        btnLookRight.setVisible(!isLockpickOpen && !(currentPosition == PlayerPosition.CABINET));
+        btnLookLeft.setVisible(!isLockpickOpen && !(currentPosition == PlayerPosition.CABINET) && !isHallway);
+        btnLookRight.setVisible(!isLockpickOpen && !(currentPosition == PlayerPosition.CABINET) && !isHallway);
     }
 
     private Enemy getEnemyAtDoor() {
@@ -1434,4 +1580,12 @@ public class GameGUI extends JPanel implements ResourceManaged {
     public Image getQteHandRightImg() { return qteHandRightImg; }
     public int getStruggleValue() { return struggleValue; }
     public java.util.List<String> getDevLogs() { return devLogs; }
+    public boolean isIncomingDialogVisible() { return incomingDialogVisible; }
+    
+    // ✨ Getters for Hallway Phase
+    public boolean isHallwayCutsceneActive() { return hallwayCutsceneActive; }
+    public int getHallwayCutsceneIndex() { return hallwayCutsceneIndex; }
+    public String[] getHallwayCutsceneTexts() { return hallwayCutsceneTexts; }
+    public boolean hasHallwayKey() { return hasHallwayKey; }
+    public String getCurrentDisplayedText() { return currentDisplayedText; }
 }

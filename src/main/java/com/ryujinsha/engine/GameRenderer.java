@@ -18,6 +18,7 @@ public class GameRenderer extends JPanel {
     private static final String PATH_FRONT_DOOR = "/assets/rooms/front_door.png";
     private static final String PATH_BACK_DOOR = "/assets/rooms/back_door.png";
     private static final String PATH_BACK_DOOR_OPENED = "/assets/rooms/back_door_opened.png";
+    private static final String PATH_HALLWAY = "/assets/rooms/hallway.png";
 
     public GameRenderer(GameGUI game) {
         this.game = game;
@@ -39,7 +40,9 @@ public class GameRenderer extends JPanel {
         // Ambil batas cangkang
         Rectangle bounds = RenderEngine.getGameBounds(pw, ph);
 
-        if (game.getCurrentPosition() == PlayerPosition.BACK_ROOM) {
+        if (game.getCurrentState() == GameState.HALLWAY) {
+            paintHallway(g2d, bounds);
+        } else if (game.getCurrentPosition() == PlayerPosition.BACK_ROOM) {
             paintBackRoom(g2d, bounds);
         } else {
             paintFrontRoom(g2d, bounds);
@@ -56,6 +59,14 @@ public class GameRenderer extends JPanel {
         if (game.isFlickering()) {
             g2d.setColor(new Color(0, 0, 0, (int) (game.getFlickerAlpha() * 255)));
             g2d.fillRect(0, 0, pw, ph);
+        }
+
+        if (game.isIncomingDialogVisible()) {
+            paintIncomingDialog(g2d, pw, ph);
+        }
+
+        if (game.isHallwayCutsceneActive()) {
+            paintHallwayCutscene(g2d, pw, ph);
         }
 
         if (game.isRetreating()) {
@@ -122,6 +133,52 @@ public class GameRenderer extends JPanel {
 
         RenderEngine.drawHitboxDebug(g2d, HitboxConfig.CABINET_HITBOX, bounds, new Color(0, 255, 0, 180));
         RenderEngine.drawHitboxDebug(g2d, HitboxConfig.LOCKDOOR_HITBOX, bounds, new Color(255, 0, 0, 180));
+    }
+
+    private void paintHallway(Graphics2D g2d, Rectangle bounds) {
+        Image img = AssetCache.get(PATH_HALLWAY);
+        if (img != null) {
+            g2d.drawImage(img, bounds.x, bounds.y, bounds.width, bounds.height, this);
+        }
+
+        // Draw debug hitboxes in dev mode
+        if (MainFrame.isDevMode) {
+            RenderEngine.drawHitboxDebug(g2d, HitboxConfig.HALLWAY_CABINET_HITBOX, bounds, new Color(0, 255, 0, 100));
+            RenderEngine.drawHitboxDebug(g2d, HitboxConfig.HALLWAY_TABLE_HITBOX, bounds, new Color(0, 255, 0, 100));
+            RenderEngine.drawHitboxDebug(g2d, HitboxConfig.HALLWAY_DOOR_HITBOX, bounds, new Color(255, 0, 0, 100));
+        }
+
+        // Display inventory if key found
+        if (game.hasHallwayKey()) {
+            g2d.setColor(Color.YELLOW);
+            g2d.setFont(new Font("Consolas", Font.BOLD, 24));
+            g2d.drawString("[ Kunci Lorong Didapatkan ]", bounds.x + 50, bounds.y + 100);
+        }
+    }
+
+    private void paintHallwayCutscene(Graphics2D g2d, int pw, int ph) {
+        // Black overlay
+        g2d.setColor(new Color(0, 0, 0, 230));
+        g2d.fillRect(0, 0, pw, ph);
+
+        String[] texts = game.getHallwayCutsceneTexts();
+        int index = game.getHallwayCutsceneIndex();
+        if (index < texts.length) {
+            String text = game.getCurrentDisplayedText(); // ✨ TYPEWRITER TEXT
+            g2d.setFont(new Font("Consolas", Font.BOLD, 28));
+            g2d.setColor(Color.WHITE);
+            FontMetrics fm = g2d.getFontMetrics();
+            int textW = fm.stringWidth(text);
+            g2d.drawString(text, (pw - textW) / 2, ph / 2);
+
+            // Tampilkan tulisan lanjut jika animasi text selesai
+            if (text.length() >= texts[index].length()) {
+                g2d.setFont(new Font("Consolas", Font.PLAIN, 18));
+                g2d.setColor(Color.GRAY);
+                String prompt = "[ Klik untuk Lanjut ]";
+                g2d.drawString(prompt, (pw - g2d.getFontMetrics().stringWidth(prompt)) / 2, ph / 2 + 100);
+            }
+        }
     }
 
     private void paintCabinetView(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
@@ -258,5 +315,35 @@ public class GameRenderer extends JPanel {
             g2d.drawString(log, 20, y);
             y += 20;
         }
+    }
+
+    private void paintIncomingDialog(Graphics2D g2d, int pw, int ph) {
+        String text = "\"Baik, mari kita mulai malam yang berat ini\"";
+        g2d.setFont(new Font("Consolas", Font.ITALIC, 32));
+        FontMetrics fm = g2d.getFontMetrics();
+        int textW = fm.stringWidth(text);
+        int textH = fm.getHeight();
+
+        int padX = 40;
+        int padY = 20;
+        int boxW = textW + padX * 2;
+        int boxH = textH + padY * 2;
+        int boxX = (pw - boxW) / 2;
+        int boxY = ph - boxH - 100;
+
+        // Background Box (Glassmorphism style)
+        g2d.setColor(new Color(0, 0, 0, 180));
+        g2d.fillRoundRect(boxX, boxY, boxW, boxH, 20, 20);
+        g2d.setColor(new Color(255, 255, 255, 50));
+        g2d.setStroke(new BasicStroke(2));
+        g2d.drawRoundRect(boxX, boxY, boxW, boxH, 20, 20);
+
+        // Shadow Text
+        g2d.setColor(Color.BLACK);
+        g2d.drawString(text, boxX + padX + 2, boxY + padY + fm.getAscent() + 2);
+
+        // Main Text
+        g2d.setColor(Color.WHITE);
+        g2d.drawString(text, boxX + padX, boxY + padY + fm.getAscent());
     }
 }

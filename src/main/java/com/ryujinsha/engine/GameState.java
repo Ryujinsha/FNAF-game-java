@@ -5,6 +5,8 @@ package com.ryujinsha.engine;
  */
 public enum GameState {
     PLAYING,      // Sedang bermain normal
+    INCOMING,     // Babak awal/prolog
+    HALLWAY,      // ✨ BARU: Fase lorong awal
     STRUGGLING,   // Sedang menahan pintu (QTE)
     LOCKPICKING,  // Sedang mencongkel gembok (QTE)
     JUMPSCARE,    // Sedang animasi jumpscare
