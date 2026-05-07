@@ -4,8 +4,8 @@ public class EnemyOdd extends Enemy {
 
     public EnemyOdd(String name, int startAggression) {
         super(name, startAggression, 7);
-        // The Red One menyerang melalui PINTU KIRI (front door)
-        this.doorTarget = "LEFT";
+        // The Red One menyerang melalui TUNNEL DOOR
+        this.doorTarget = "TUNNEL";
         this.jumpscarePath = "/assets/enemies/enemy_a_door/jumpscare/jumpscare.gif";
         this.quotePath = "/assets/audio/voice/quote_enemyOdd.wav";
     }

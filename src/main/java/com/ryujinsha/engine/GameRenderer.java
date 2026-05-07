@@ -50,10 +50,21 @@ public class GameRenderer extends JPanel {
 
         if (game.getCurrentPosition() == PlayerPosition.CABINET) {
             paintCabinetView(g2d, bounds, pw, ph);
+        } else if (game.getCurrentPosition() == PlayerPosition.FRONT_ROOM) {
+            if (game.isPeekingKeyhole()) {
+                paintKeyholeView(g2d, pw, ph);
+            } else if (game.isPeekingVent()) {
+                paintVentView(g2d, pw, ph);
+            }
         }
 
         if (game.getVignetteIntensity() > 0) {
             paintVignette(g2d, pw, ph);
+        }
+
+        // Draw flashlight effect if on (yellow semi-transparent tint or just circle)
+        if (game.isFlashlightOn() && game.getCurrentPosition() == PlayerPosition.FRONT_ROOM) {
+            paintFlashlight(g2d, pw, ph);
         }
 
         if (game.isFlickering()) {
@@ -79,36 +90,8 @@ public class GameRenderer extends JPanel {
     }
 
     private void paintFrontRoom(Graphics2D g2d, Rectangle bounds) {
-        Enemy enemyB = game.getEnemyB();
-        Enemy enemyA = game.getEnemyA();
-
-        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() == 3 && game.getCurrentState() != GameState.STRUGGLING && !game.isRetreating()) {
-            Image ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
-            if (ventSprite != null) {
-                RenderEngine.drawSprite(g2d, ventSprite, bounds,
-                        HitboxConfig.ENEMY_B_SPRITE_X, HitboxConfig.ENEMY_B_SPRITE_Y,
-                        HitboxConfig.ENEMY_B_SPRITE_W, HitboxConfig.ENEMY_B_SPRITE_H,
-                        true, this);
-            }
-        }
-
-        Image doorEnemyVisual = game.getDoorEnemyVisual();
-        if (doorEnemyVisual != null && !game.getPlayer().isLeftDoorClosed() && !game.isFlickering()) {
-            RenderEngine.drawSprite(g2d, doorEnemyVisual, bounds,
-                    HitboxConfig.ENEMY_A_SPRITE_X, HitboxConfig.ENEMY_A_SPRITE_Y,
-                    HitboxConfig.ENEMY_A_SPRITE_W, HitboxConfig.ENEMY_A_SPRITE_H,
-                    true, this);
-        }
-
-        if (enemyB.isAtDoor() && enemyB.getPatienceTimer() <= 2 && game.getCurrentState() != GameState.STRUGGLING && !game.isRetreating() && !game.isFlickering()) {
-            Image hinaImg = game.getIdleSprite(enemyB);
-            if (hinaImg != null) {
-                RenderEngine.drawSprite(g2d, hinaImg, bounds,
-                        HitboxConfig.ENEMY_B_PHASE2_X, HitboxConfig.ENEMY_B_PHASE2_Y,
-                        HitboxConfig.ENEMY_B_PHASE2_W, HitboxConfig.ENEMY_B_PHASE2_H,
-                        true, this);
-            }
-        }
+        // ✨ Enemy A and B are NO LONGER rendered here. 
+        // They are strictly visible through the vent/keyhole peeking views.
 
         Image imgFront = AssetCache.get(PATH_FRONT_ROOM);
         if (imgFront != null) {
@@ -345,5 +328,120 @@ public class GameRenderer extends JPanel {
         // Main Text
         g2d.setColor(Color.WHITE);
         g2d.drawString(text, boxX + padX, boxY + padY + fm.getAscent());
+    }
+
+    private void paintKeyholeView(Graphics2D g2d, int pw, int ph) {
+        Rectangle bounds = RenderEngine.getGameBounds(pw, ph);
+        
+        // Base Background: tunnel
+        Image tunnel = AssetCache.get("/assets/keyhole/tunnel.png");
+        if (tunnel != null) {
+            g2d.drawImage(tunnel, bounds.x, bounds.y, bounds.width, bounds.height, this);
+        }
+
+        Enemy enemyA = game.getEnemyA();
+        if (enemyA.isAtDoor() && game.isFlashlightOn()) {
+            Image enemySprite = null;
+            if (enemyA.getPatienceTimer() == 2) {
+                enemySprite = AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png");
+            } else if (enemyA.getPatienceTimer() == 1 || enemyA.getPatienceTimer() <= 0) {
+                enemySprite = AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-2.png");
+            }
+            if (enemySprite != null) {
+                // Adjust scale and position based on phase (closer for phase 2)
+                int spriteW = HitboxConfig.ENEMY_A_SPRITE_W;
+                int spriteH = HitboxConfig.ENEMY_A_SPRITE_H;
+                if (enemyA.getPatienceTimer() == 2) {
+                    spriteW = (int) (spriteW * 0.7); // farther away
+                    spriteH = (int) (spriteH * 0.7);
+                }
+                RenderEngine.drawSprite(g2d, enemySprite, bounds,
+                        HitboxConfig.ENEMY_A_SPRITE_X, HitboxConfig.ENEMY_A_SPRITE_Y + (HitboxConfig.ENEMY_A_SPRITE_H - spriteH),
+                        spriteW, spriteH, true, this);
+            }
+        }
+
+        // Draw door overlay if patience is 3 (door closed)
+        if (!enemyA.isAtDoor() || enemyA.getPatienceTimer() >= 3) {
+            Image tunnelDoor = AssetCache.get("/assets/keyhole/tunnel_door.png");
+            if (tunnelDoor != null) {
+                g2d.drawImage(tunnelDoor, bounds.x, bounds.y, bounds.width, bounds.height, this);
+            }
+        }
+
+        // Letterbox / overlay to simulate looking through keyhole
+        g2d.setColor(new Color(0, 0, 0, 220));
+        java.awt.geom.Area outer = new java.awt.geom.Area(new Rectangle(0, 0, pw, ph));
+        int holeW = (int) (bounds.width * 0.6);
+        int holeH = (int) (bounds.height * 0.6);
+        int holeX = bounds.x + (bounds.width - holeW) / 2;
+        int holeY = bounds.y + (bounds.height - holeH) / 2;
+        
+        java.awt.geom.Area innerCircle = new java.awt.geom.Area(new java.awt.geom.Ellipse2D.Double(holeX, holeY, holeW, holeH));
+        int[] tx = {bounds.x + bounds.width/2 - holeW/4, bounds.x + bounds.width/2 + holeW/4, bounds.x + bounds.width/2};
+        int[] ty = {holeY + holeH/2, holeY + holeH/2, holeY + holeH + (int)(holeH*0.4)};
+        java.awt.geom.Area innerTriangle = new java.awt.geom.Area(new java.awt.Polygon(tx, ty, 3));
+        
+        innerCircle.add(innerTriangle);
+        outer.subtract(innerCircle);
+        g2d.fill(outer);
+        
+        g2d.setColor(Color.WHITE);
+        g2d.setFont(new Font("Consolas", Font.BOLD, 24));
+        String text = ">>> MENGINTIP LUBANG KUNCI (F=Senter) <<<";
+        g2d.drawString(text, (pw - g2d.getFontMetrics().stringWidth(text))/2, 50);
+    }
+
+    private void paintVentView(Graphics2D g2d, int pw, int ph) {
+        Rectangle bounds = RenderEngine.getGameBounds(pw, ph);
+
+        // Vent back
+        Image ventBack = AssetCache.get("/assets/vent/vent_back.png");
+        if (ventBack != null) {
+            g2d.drawImage(ventBack, bounds.x, bounds.y, bounds.width, bounds.height, this);
+        }
+
+        // Enemy B
+        Enemy enemyB = game.getEnemyB();
+        if (enemyB.isAtDoor() && game.isFlashlightOn()) {
+            Image ventSprite = null;
+            int renderX = HitboxConfig.ENEMY_B_PHASE2_X;
+            if (enemyB.getPatienceTimer() == 3) {
+                ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase_1.png");
+                renderX = HitboxConfig.ENEMY_B_PHASE2_X + 150; // offset right
+            } else if (enemyB.getPatienceTimer() <= 2) {
+                ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
+                renderX = HitboxConfig.ENEMY_B_PHASE2_X; // center
+            }
+            if (ventSprite != null) {
+                RenderEngine.drawSprite(g2d, ventSprite, bounds,
+                        renderX, HitboxConfig.ENEMY_B_PHASE2_Y,
+                        HitboxConfig.ENEMY_B_PHASE2_W, HitboxConfig.ENEMY_B_PHASE2_H,
+                        true, this);
+            }
+        }
+
+        // Vent front overlay
+        Image ventFront = AssetCache.get("/assets/vent/vent_front.png");
+        if (ventFront != null) {
+            g2d.drawImage(ventFront, bounds.x, bounds.y, bounds.width, bounds.height, this);
+        }
+
+        g2d.setColor(Color.WHITE);
+        g2d.setFont(new Font("Consolas", Font.BOLD, 24));
+        String text = ">>> MENGECEK VENTILASI (F=Senter) <<<";
+        g2d.drawString(text, (pw - g2d.getFontMetrics().stringWidth(text))/2, 50);
+    }
+
+    private void paintFlashlight(Graphics2D g2d, int pw, int ph) {
+        // Flashlight effect: circular bright spot in the center, transparent at edges
+        RadialGradientPaint rgp = new RadialGradientPaint(
+                new Point2D.Float(pw / 2f, ph / 2f),
+                Math.max(pw, ph) / 2.5f,
+                new float[] { 0.0f, 0.6f, 1.0f },
+                new Color[] { new Color(255, 255, 230, 40), new Color(255, 255, 230, 10), new Color(0, 0, 0, 0) }
+        );
+        g2d.setPaint(rgp);
+        g2d.fillRect(0, 0, pw, ph);
     }
 }

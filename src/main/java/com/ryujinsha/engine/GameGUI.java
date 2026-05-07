@@ -106,6 +106,11 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private boolean hasFlickeredForEnemyA = false; // ✨ BARU: Flag agar flicker hanya 1x per approach (The Red One)
     private boolean hasFlickeredForDanger = false; // ✨ BARU: Flag untuk flicker peringatan terakhir (patience 1)
     private java.util.List<String> devLogs = new java.util.ArrayList<>(); // ✨ BARU: Cache log untuk Dev Mode
+    
+    // ✨ BARU: Peek & Flashlight mechanics
+    private boolean isPeekingKeyhole = false;
+    private boolean isPeekingVent = false;
+    private boolean isFlashlightOn = false;
 
     // ✨ BARU: Incoming Stage fields
     private boolean incomingDialogVisible = false;
@@ -205,8 +210,13 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 PATH_BACK_DOOR_OPENED,
                 PATH_LOCK_DOOR,
                 PATH_HALLWAY,
+                "/assets/keyhole/tunnel.png",
+                "/assets/keyhole/tunnel_door.png",
+                "/assets/vent/vent_back.png",
+                "/assets/vent/vent_front.png",
                 "/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png",
                 "/assets/enemies/enemy_a_door/idle/the-red-idle-phase-2.png",
+                "/assets/enemies/enemy_b_vent/idle/hina_idle_phase_1.png",
                 "/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
     }
 
@@ -856,12 +866,60 @@ public class GameGUI extends JPanel implements ResourceManaged {
             }
         });
 
-        // E — Toggle pintu depan
-        im.put(KeyStroke.getKeyStroke("E"), "toggleDoor");
-        am.put("toggleDoor", new AbstractAction() {
+        // Q — Mengintip lubang kunci (Peek Keyhole)
+        im.put(KeyStroke.getKeyStroke("Q"), "peekKeyhole");
+        am.put("peekKeyhole", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                // ✨ Player tidak bisa kontrol manual via E lagi.
+                if (currentState == GameState.GAMEOVER || currentPosition != PlayerPosition.FRONT_ROOM) return;
+                isPeekingKeyhole = !isPeekingKeyhole;
+                if (!isPeekingKeyhole) {
+                    logEvent("👀 Kamu berhenti mengintip lubang kunci.");
+                    // Reset Enemy A if it was in phase 1 or 2
+                    if (enemyA.isAtDoor() && (enemyA.getPatienceTimer() == 2 || enemyA.getPatienceTimer() == 1)) {
+                        logEvent("👤 [SAFE] Kamu berhenti mengintip. The Red One pergi.");
+                        AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                        startRetreatAnimation(enemyA);
+                    }
+                } else {
+                    logEvent("👀 Kamu mengintip lubang kunci...");
+                }
+                officePanel.repaint();
+            }
+        });
+
+        // E — Mengintip ventilasi (Peek Vent)
+        im.put(KeyStroke.getKeyStroke("E"), "peekVent");
+        am.put("peekVent", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (currentState == GameState.GAMEOVER || currentPosition != PlayerPosition.FRONT_ROOM) return;
+                isPeekingVent = !isPeekingVent;
+                if (isPeekingVent) {
+                    logEvent("👀 Kamu mengecek ventilasi...");
+                    // Retreat Enemy B if in phase 2
+                    if (enemyB.isAtDoor() && enemyB.getPatienceTimer() == 2) {
+                        logEvent("👤 [SAFE] Kamu memergoki Hina di ventilasi! Dia mundur.");
+                        AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                        startRetreatAnimation(enemyB);
+                    }
+                } else {
+                    logEvent("👀 Kamu berhenti mengecek ventilasi.");
+                }
+                officePanel.repaint();
+            }
+        });
+
+        // F — Senter (Flashlight)
+        im.put(KeyStroke.getKeyStroke("F"), "toggleFlashlight");
+        am.put("toggleFlashlight", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (currentState == GameState.GAMEOVER || currentPosition != PlayerPosition.FRONT_ROOM) return;
+                isFlashlightOn = !isFlashlightOn;
+                logEvent("🔦 Senter: " + (isFlashlightOn ? "NYALA" : "MATI"));
+                AudioManager.playSound("/assets/audio/sfx/button_click.wav");
+                officePanel.repaint();
             }
         });
 
@@ -906,8 +964,44 @@ public class GameGUI extends JPanel implements ResourceManaged {
             }
         };
         im.put(KeyStroke.getKeyStroke("S"), "sAction");
-        im.put(KeyStroke.getKeyStroke("ESCAPE"), "sAction");
         am.put("sAction", sAction);
+
+        // ESC — Universal "Back" / "Mundur" action
+        AbstractAction escAction = new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (currentState == GameState.GAMEOVER || currentState == GameState.STRUGGLING)
+                    return;
+
+                if (isPeekingKeyhole) {
+                    isPeekingKeyhole = false;
+                    logEvent("👀 Kamu berhenti mengintip lubang kunci.");
+                    if (enemyA.isAtDoor() && (enemyA.getPatienceTimer() == 2 || enemyA.getPatienceTimer() == 1)) {
+                        logEvent("👤 [SAFE] Kamu berhenti mengintip. The Red One pergi.");
+                        AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                        startRetreatAnimation(enemyA);
+                    }
+                    officePanel.repaint();
+                } else if (isPeekingVent) {
+                    isPeekingVent = false;
+                    logEvent("👀 Kamu berhenti mengecek ventilasi.");
+                    officePanel.repaint();
+                } else if (lockpickPopupPanel.isVisible()) {
+                    stopQte();
+                    lockpickPopupPanel.setVisible(false);
+                    updateUIVisibility();
+                    logEvent("🔧 [INTERACT] Kamu mundur dari gembok.");
+                } else if (currentPosition == PlayerPosition.CABINET) {
+                    exitCabinet();
+                } else if (currentPosition == PlayerPosition.BACK_ROOM) {
+                    currentPosition = PlayerPosition.FRONT_ROOM;
+                    updateUIVisibility();
+                    officePanel.repaint();
+                }
+            }
+        };
+        im.put(KeyStroke.getKeyStroke("ESCAPE"), "escAction");
+        am.put("escAction", escAction);
     }
 
     // ============================================================
@@ -937,11 +1031,13 @@ public class GameGUI extends JPanel implements ResourceManaged {
         }
 
         if (areEnemiesActive) {
-            // ✨ MODIFIKASI: Logika "Satu Per Satu" — Musuh hanya bisa maju jika pintu kosong.
-            // Jika sudah di pintu, mereka tetap act() untuk countdown.
+            // ✨ MODIFIKASI: Enemy A pause jika sedang mengintip
             if (enemyA.isAtDoor() || getEnemyAtDoor() == null) {
-                enemyA.act();
+                if (!isPeekingKeyhole || !enemyA.isAtDoor()) {
+                    enemyA.act();
+                }
             }
+            // ✨ MODIFIKASI: Enemy B selalu act() kecuali jika player sedang mengintip dan ia berada di phase 2 (langsung retreat)
             if (enemyB.isAtDoor() || getEnemyAtDoor() == null) {
                 enemyB.act();
             }
@@ -973,53 +1069,39 @@ public class GameGUI extends JPanel implements ResourceManaged {
             return;
 
         // ============================================================
-        // ENEMY A (The Red One) — 3-Phase Flow (unchanged)
+        // ENEMY A (The Red One) — New Phase Flow
         // ============================================================
         if (enemy == enemyA) {
             if (enemy.getPatienceTimer() == 3) {
-                // ✨ BARU: Trigger flicker sebelum pintu terbuka
+                // Pintu tunnel terbuka di awal tanpa sprite muncul (hanya audio)
                 if (!hasFlickeredForEnemyA) {
                     startFlickerEffect();
                     hasFlickeredForEnemyA = true;
                 }
-
-                // Pintu hanya terbuka setelah flicker (untuk efek dramatis)
                 if (!isFlickering && player.isLeftDoorClosed()) {
-                    logEvent("🚪 *KREK*... Pintu terbuka di PHASE 1. The Red One terlihat!");
+                    logEvent("🚪 *KREK*... Pintu tunnel terbuka. (Phase Start)");
                     player.setLeftDoorClosed(false);
                     AudioManager.playSound("/assets/audio/sfx/door_open.wav");
                 }
             }
             if (enemy.getPatienceTimer() == 2) {
-                logEvent("💥 Pintu tertutup kembali saat enemy mendekat...");
-                player.setLeftDoorClosed(true);
-                AudioManager.playSound("/assets/audio/sfx/door_close.wav");
-                updateDoorVisuals();
-                hidEarly = (currentPosition == PlayerPosition.CABINET);
+                // Phase 1: Langkah kaki pertama
+                logEvent("👣 *Tap tap tap*... Terdengar langkah kaki mendekat.");
+                AudioManager.playSound("/assets/audio/sfx/footsteps.wav");
             }
 
-            // Phase 3: Critical Danger (patience == 1)
             if (enemy.getPatienceTimer() == 1) {
+                // Phase 2: Langkah kaki dekat lubang kunci
                 if (!hasFlickeredForDanger) {
+                    logEvent("👣 *TAP TAP*... Langkah kaki berhenti di dekat lubang kunci!");
+                    AudioManager.playSound("/assets/audio/sfx/footsteps.wav");
                     startFlickerEffect();
                     hasFlickeredForDanger = true;
                 }
             }
 
             if (enemy.getPatienceTimer() <= 0) {
-                if ((currentPosition == PlayerPosition.CABINET)) {
-                    if (hidEarly) {
-                        logEvent("👤 [SAFE] Kamu sudah bersembunyi tepat waktu. The Red One pergi.");
-                        AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
-                        enemy.retreat(10);
-                        updateDoorVisuals();
-                        hidEarly = false;
-                    } else {
-                        initiateJumpscareSequence(enemy);
-                    }
-                } else {
-                    initiateJumpscareSequence(enemy);
-                }
+                initiateJumpscareSequence(enemy);
             }
             return;
         }
@@ -1035,32 +1117,29 @@ public class GameGUI extends JPanel implements ResourceManaged {
         // Phase 0: Vent Crawling — tension buildup
         if (enemy.getPatienceTimer() == 4) {
             logEvent("💨 *suara merangkak*... Ada sesuatu bergerak di dalam ventilasi.");
-            AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav");
+            AudioManager.playSound("/assets/audio/sfx/door_bang_1.wav"); // Maybe vent crawl sound if available
         }
 
-        // Phase 1: Show Up on Vent — partially visible
-        // If player is ALREADY hiding at this point, they're safe (no QTE)
+        // Phase 1: Show Up on Vent — right ventilation (idle_phase_1)
         if (enemy.getPatienceTimer() == 3) {
-            logEvent("🕷️ Hina muncul sebagian dari lubang ventilasi...");
-            if ((currentPosition == PlayerPosition.CABINET)) {
-                hidEarly = true; // Player hid before Idle in Front → safe
-            }
+            logEvent("🕷️ Hina muncul di ventilasi sisi kanan...");
             updateDoorVisuals();
         }
 
-        // Phase 2: Idle in Front — fully visible, tension peak
+        // Phase 2: Idle in Front — center vent (idle_phase_2)
         if (enemy.getPatienceTimer() == 2) {
-            // ✨ BARU: Trigger efek flicker lampu sebelum muncul solid
             if (!hasFlickeredForPhase2) {
                 startFlickerEffect();
                 hasFlickeredForPhase2 = true;
             }
-
-            logEvent("👁️ Hina berdiri di depanmu! Dia menatapmu dari celah ventilasi!");
+            logEvent("👁️ Hina berpindah ke tengah ventilasi! Dia menatapmu!");
             AudioManager.playSound("/assets/audio/sfx/door_close.wav");
-            // Only mark as hidEarly if player was already hiding BEFORE this phase
-            if ((currentPosition == PlayerPosition.CABINET) && !hidEarly) {
-                hidEarly = false; // Player hid too late → QTE will trigger
+            
+            // Check if player is ALREADY peeking vent
+            if (isPeekingVent) {
+                logEvent("👤 [SAFE] Kamu memergoki Hina di ventilasi! Dia mundur.");
+                AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                startRetreatAnimation(enemy);
             }
             updateDoorVisuals();
         }
@@ -1075,22 +1154,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
         // Phase 3: Execution (patience <= 0)
         if (enemy.getPatienceTimer() <= 0) {
-            if ((currentPosition == PlayerPosition.CABINET)) {
-                if (hidEarly) {
-                    // Player hid during Phase 1 (Show Up on Vent) → safe, NO QTE
-                    logEvent("👤 [SAFE] Kamu bersembunyi sebelum Hina mendekat. Dia kembali ke vent.");
-                    AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
-                    enemy.retreat(10);
-                    updateDoorVisuals();
-                    hidEarly = false;
-                } else {
-                    // Player hid during Phase 2 (Idle in Front) → QTE triggers
-                    startStruggle(enemy);
-                }
-            } else {
-                // Player not hiding at all → direct jumpscare
-                initiateJumpscareSequence(enemy);
-            }
+            initiateJumpscareSequence(enemy);
         }
     }
 
@@ -1588,4 +1652,9 @@ public class GameGUI extends JPanel implements ResourceManaged {
     public String[] getHallwayCutsceneTexts() { return hallwayCutsceneTexts; }
     public boolean hasHallwayKey() { return hasHallwayKey; }
     public String getCurrentDisplayedText() { return currentDisplayedText; }
+    
+    // ✨ Getters for Peek & Flashlight
+    public boolean isPeekingKeyhole() { return isPeekingKeyhole; }
+    public boolean isPeekingVent() { return isPeekingVent; }
+    public boolean isFlashlightOn() { return isFlashlightOn; }
 }
