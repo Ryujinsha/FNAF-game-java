@@ -62,9 +62,9 @@ public class GameRenderer extends JPanel {
             paintVignette(g2d, pw, ph);
         }
 
-        // Draw flashlight effect if on (yellow semi-transparent tint or just circle)
-        if (game.isFlashlightOn() && game.getCurrentPosition() == PlayerPosition.FRONT_ROOM) {
-            paintFlashlight(g2d, pw, ph);
+        // Draw darkness overlay (FNAF 4 style atmosphere)
+        if (game.getCurrentState() != GameState.HALLWAY && game.getCurrentState() != GameState.GAMEOVER) {
+            paintDarknessOverlay(g2d, pw, ph);
         }
 
         if (game.isFlickering()) {
@@ -204,10 +204,10 @@ public class GameRenderer extends JPanel {
             baseH = (int) (HitboxConfig.ENEMY_B_PHASE2_H * hinaScale);
             RenderEngine.drawSprite(g2d, retreatImg, bounds, basePosX, basePosY - 50, baseW, baseH, true, this);
         } else {
-            basePosX = HitboxConfig.ENEMY_A_SPRITE_X - xOffset;
-            basePosY = HitboxConfig.ENEMY_A_SPRITE_Y;
-            baseW = (int) (HitboxConfig.ENEMY_A_SPRITE_W * scaleFactor);
-            baseH = (int) (HitboxConfig.ENEMY_A_SPRITE_H * scaleFactor);
+            basePosX = HitboxConfig.ENEMY_A_KEYHOLE_P2_X - xOffset;
+            basePosY = HitboxConfig.ENEMY_A_KEYHOLE_P2_Y;
+            baseW = (int) (HitboxConfig.ENEMY_A_KEYHOLE_P2_W * scaleFactor);
+            baseH = (int) (HitboxConfig.ENEMY_A_KEYHOLE_P2_H * scaleFactor);
             RenderEngine.drawSprite(g2d, retreatImg, bounds, basePosX, basePosY - 50, baseW, baseH, true, this);
         }
     }
@@ -348,16 +348,20 @@ public class GameRenderer extends JPanel {
                 enemySprite = AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-2.png");
             }
             if (enemySprite != null) {
-                // Adjust scale and position based on phase (closer for phase 2)
-                int spriteW = HitboxConfig.ENEMY_A_SPRITE_W;
-                int spriteH = HitboxConfig.ENEMY_A_SPRITE_H;
+                int renderX, renderY, spriteW, spriteH;
                 if (enemyA.getPatienceTimer() == 2) {
-                    spriteW = (int) (spriteW * 0.7); // farther away
-                    spriteH = (int) (spriteH * 0.7);
+                    renderX = HitboxConfig.ENEMY_A_KEYHOLE_P1_X;
+                    renderY = HitboxConfig.ENEMY_A_KEYHOLE_P1_Y;
+                    spriteW = HitboxConfig.ENEMY_A_KEYHOLE_P1_W;
+                    spriteH = HitboxConfig.ENEMY_A_KEYHOLE_P1_H;
+                } else {
+                    renderX = HitboxConfig.ENEMY_A_KEYHOLE_P2_X;
+                    renderY = HitboxConfig.ENEMY_A_KEYHOLE_P2_Y;
+                    spriteW = HitboxConfig.ENEMY_A_KEYHOLE_P2_W;
+                    spriteH = HitboxConfig.ENEMY_A_KEYHOLE_P2_H;
                 }
                 RenderEngine.drawSprite(g2d, enemySprite, bounds,
-                        HitboxConfig.ENEMY_A_SPRITE_X, HitboxConfig.ENEMY_A_SPRITE_Y + (HitboxConfig.ENEMY_A_SPRITE_H - spriteH),
-                        spriteW, spriteH, true, this);
+                        renderX, renderY, spriteW, spriteH, true, this);
             }
         }
 
@@ -400,24 +404,31 @@ public class GameRenderer extends JPanel {
         if (ventBack != null) {
             g2d.drawImage(ventBack, bounds.x, bounds.y, bounds.width, bounds.height, this);
         }
-
-        // Enemy B
+        // Enemy B — 3-Phase Vent Rendering
         Enemy enemyB = game.getEnemyB();
         if (enemyB.isAtDoor() && game.isFlashlightOn()) {
             Image ventSprite = null;
-            int renderX = HitboxConfig.ENEMY_B_PHASE2_X;
+            int renderX, renderY, spriteW, spriteH;
+
             if (enemyB.getPatienceTimer() == 3) {
+                // Phase 1: Hina muncul dari sisi kanan lubang vent (partial)
                 ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase_1.png");
-                renderX = HitboxConfig.ENEMY_B_PHASE2_X + 150; // offset right
-            } else if (enemyB.getPatienceTimer() <= 2) {
+                renderX = HitboxConfig.ENEMY_B_VENT_P1_X;
+                renderY = HitboxConfig.ENEMY_B_VENT_P1_Y;
+                spriteW = HitboxConfig.ENEMY_B_VENT_P1_W;
+                spriteH = HitboxConfig.ENEMY_B_VENT_P1_H;
+            } else {
+                // Phase 2 (patience<=2): Hina memenuhi seluruh lubang vent
                 ventSprite = AssetCache.get("/assets/enemies/enemy_b_vent/idle/hina_idle_phase-2.png");
-                renderX = HitboxConfig.ENEMY_B_PHASE2_X; // center
+                renderX = HitboxConfig.ENEMY_B_VENT_P2_X;
+                renderY = HitboxConfig.ENEMY_B_VENT_P2_Y;
+                spriteW = HitboxConfig.ENEMY_B_VENT_P2_W;
+                spriteH = HitboxConfig.ENEMY_B_VENT_P2_H;
             }
+
             if (ventSprite != null) {
                 RenderEngine.drawSprite(g2d, ventSprite, bounds,
-                        renderX, HitboxConfig.ENEMY_B_PHASE2_Y,
-                        HitboxConfig.ENEMY_B_PHASE2_W, HitboxConfig.ENEMY_B_PHASE2_H,
-                        true, this);
+                        renderX, renderY, spriteW, spriteH, true, this);
             }
         }
 
@@ -433,15 +444,21 @@ public class GameRenderer extends JPanel {
         g2d.drawString(text, (pw - g2d.getFontMetrics().stringWidth(text))/2, 50);
     }
 
-    private void paintFlashlight(Graphics2D g2d, int pw, int ph) {
-        // Flashlight effect: circular bright spot in the center, transparent at edges
-        RadialGradientPaint rgp = new RadialGradientPaint(
-                new Point2D.Float(pw / 2f, ph / 2f),
-                Math.max(pw, ph) / 2.5f,
-                new float[] { 0.0f, 0.6f, 1.0f },
-                new Color[] { new Color(255, 255, 230, 40), new Color(255, 255, 230, 10), new Color(0, 0, 0, 0) }
-        );
-        g2d.setPaint(rgp);
-        g2d.fillRect(0, 0, pw, ph);
+    private void paintDarknessOverlay(Graphics2D g2d, int pw, int ph) {
+        if (game.isFlashlightOn() && (game.getCurrentPosition() == PlayerPosition.FRONT_ROOM || game.getCurrentPosition() == PlayerPosition.PEEKING_KEYHOLE || game.getCurrentPosition() == PlayerPosition.PEEKING_VENT)) {
+            // Senter menyala: Buat gradien melingkar dari transparan ke hitam (FNAF 4 style)
+            RadialGradientPaint rgp = new RadialGradientPaint(
+                    new Point2D.Float(pw / 2f, ph / 2f),
+                    Math.max(pw, ph) / 1.5f,
+                    new float[] { 0.0f, 0.5f, 1.0f },
+                    new Color[] { new Color(0, 0, 0, 0), new Color(0, 0, 0, 200), new Color(0, 0, 0, 255) }
+            );
+            g2d.setPaint(rgp);
+            g2d.fillRect(0, 0, pw, ph);
+        } else {
+            // Senter mati: Gelap gulita
+            g2d.setColor(new Color(0, 0, 0, 245));
+            g2d.fillRect(0, 0, pw, ph);
+        }
     }
 }

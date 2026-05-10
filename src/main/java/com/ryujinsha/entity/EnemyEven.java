@@ -20,7 +20,7 @@ public class EnemyEven extends Enemy {
         super(name, startAggression, 6);
         this.doorTarget = "VENT";
         this.jumpscarePath = "/assets/enemies/enemy_b_vent/jumpscare/hina_jumpscare.gif";
-        this.quotePath = "/assets/audio/voice/quote_enemyEven.wav";
+        this.quotePath = null; // No quote for Enemy B currently
         this.patienceTimer = 4; // Start with 4 ticks for the new phase flow
     }
 

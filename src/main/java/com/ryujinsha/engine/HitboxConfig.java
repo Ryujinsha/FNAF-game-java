@@ -28,16 +28,25 @@ public class HitboxConfig {
     // FRONT ROOM — Ruang Kantor Depan
     // ============================================================
 
+    // ============================================================
+    // KEYHOLE VIEW — Skala Rendering The Red One (2 Phase)
+    // ============================================================
+
     /**
-     * Area render sprite Enemy A (The Red One) di pintu depan kiri.
-     * Sprite akan di-scale ke fit lebar kotak ini, align-bottom.
-     * origX, origY = posisi kotak target dalam space 2816x1536
-     * origW, origH = ukuran kotak target
+     * Phase 1 (patience=2): The Red One di ujung lorong (lebih kecil & jauh)
      */
-    public static final int ENEMY_A_SPRITE_X = 480;
-    public static final int ENEMY_A_SPRITE_Y = 100;
-    public static final int ENEMY_A_SPRITE_W = 560;
-    public static final int ENEMY_A_SPRITE_H = 1350;
+    public static final int ENEMY_A_KEYHOLE_P1_X = 1000;
+    public static final int ENEMY_A_KEYHOLE_P1_Y = 300;
+    public static final int ENEMY_A_KEYHOLE_P1_W = 700;
+    public static final int ENEMY_A_KEYHOLE_P1_H = 1100;
+
+    /**
+     * Phase 2 (patience<=1): The Red One tepat di depan pintu (besar & menakutkan)
+     */
+    public static final int ENEMY_A_KEYHOLE_P2_X = 700;
+    public static final int ENEMY_A_KEYHOLE_P2_Y = 100;
+    public static final int ENEMY_A_KEYHOLE_P2_W = 1300;
+    public static final int ENEMY_A_KEYHOLE_P2_H = 1436;
 
     /**
      * Area render sprite Enemy B (Hina) di ventilasi kanan.
@@ -50,11 +59,34 @@ public class HitboxConfig {
     /**
      * Posisi Hina saat di Phase 2 (Muncul solid di depan pemain).
      * Diletakkan agak tengah agar mengagetkan.
+     * (Dipakai juga untuk retreat animation)
      */
-    public static final int ENEMY_B_PHASE2_X = 1100;
-    public static final int ENEMY_B_PHASE2_Y = 50;
-    public static final int ENEMY_B_PHASE2_W = 750;
-    public static final int ENEMY_B_PHASE2_H = 1400;
+    public static final int ENEMY_B_PHASE2_X = 900;
+    public static final int ENEMY_B_PHASE2_Y = 0;
+    public static final int ENEMY_B_PHASE2_W = 1000;
+    public static final int ENEMY_B_PHASE2_H = 1536;
+
+    // ============================================================
+    // VENT VIEW — Skala Rendering Hina di Vent (3 Phase)
+    // ============================================================
+
+    /**
+     * Phase 1 (patience=3): Hina muncul dari sisi kanan lubang vent.
+     * Sebagian tubuh terlihat, merangkak keluar.
+     */
+    public static final int ENEMY_B_VENT_P1_X = 1300;
+    public static final int ENEMY_B_VENT_P1_Y = 100;
+    public static final int ENEMY_B_VENT_P1_W = 1200;
+    public static final int ENEMY_B_VENT_P1_H = 1350;
+
+    /**
+     * Phase 2 (patience<=2): Hina memenuhi seluruh lubang vent.
+     * Sangat dekat, wajah dan tangan memenuhi frame.
+     */
+    public static final int ENEMY_B_VENT_P2_X = 300;
+    public static final int ENEMY_B_VENT_P2_Y = 0;
+    public static final int ENEMY_B_VENT_P2_W = 2200;
+    public static final int ENEMY_B_VENT_P2_H = 1536;
 
     // ============================================================
     // BACK ROOM — Ruang Pintu Belakang

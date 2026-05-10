@@ -108,8 +108,6 @@ public class GameGUI extends JPanel implements ResourceManaged {
     private java.util.List<String> devLogs = new java.util.ArrayList<>(); // ✨ BARU: Cache log untuk Dev Mode
     
     // ✨ BARU: Peek & Flashlight mechanics
-    private boolean isPeekingKeyhole = false;
-    private boolean isPeekingVent = false;
     private boolean isFlashlightOn = false;
 
     // ✨ BARU: Incoming Stage fields
@@ -871,9 +869,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
         am.put("peekKeyhole", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (currentState == GameState.GAMEOVER || currentPosition != PlayerPosition.FRONT_ROOM) return;
-                isPeekingKeyhole = !isPeekingKeyhole;
-                if (!isPeekingKeyhole) {
+                if (currentState == GameState.GAMEOVER || (currentPosition != PlayerPosition.FRONT_ROOM && currentPosition != PlayerPosition.PEEKING_KEYHOLE)) return;
+                
+                if (currentPosition == PlayerPosition.PEEKING_KEYHOLE) {
+                    currentPosition = PlayerPosition.FRONT_ROOM;
                     logEvent("👀 Kamu berhenti mengintip lubang kunci.");
                     // Reset Enemy A if it was in phase 1 or 2
                     if (enemyA.isAtDoor() && (enemyA.getPatienceTimer() == 2 || enemyA.getPatienceTimer() == 1)) {
@@ -882,6 +881,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
                         startRetreatAnimation(enemyA);
                     }
                 } else {
+                    currentPosition = PlayerPosition.PEEKING_KEYHOLE;
                     logEvent("👀 Kamu mengintip lubang kunci...");
                 }
                 officePanel.repaint();
@@ -893,9 +893,10 @@ public class GameGUI extends JPanel implements ResourceManaged {
         am.put("peekVent", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                if (currentState == GameState.GAMEOVER || currentPosition != PlayerPosition.FRONT_ROOM) return;
-                isPeekingVent = !isPeekingVent;
-                if (isPeekingVent) {
+                if (currentState == GameState.GAMEOVER || (currentPosition != PlayerPosition.FRONT_ROOM && currentPosition != PlayerPosition.PEEKING_VENT)) return;
+                
+                if (currentPosition != PlayerPosition.PEEKING_VENT) {
+                    currentPosition = PlayerPosition.PEEKING_VENT;
                     logEvent("👀 Kamu mengecek ventilasi...");
                     // Retreat Enemy B if in phase 2
                     if (enemyB.isAtDoor() && enemyB.getPatienceTimer() == 2) {
@@ -904,6 +905,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
                         startRetreatAnimation(enemyB);
                     }
                 } else {
+                    currentPosition = PlayerPosition.FRONT_ROOM;
                     logEvent("👀 Kamu berhenti mengecek ventilasi.");
                 }
                 officePanel.repaint();
@@ -973,8 +975,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
                 if (currentState == GameState.GAMEOVER || currentState == GameState.STRUGGLING)
                     return;
 
-                if (isPeekingKeyhole) {
-                    isPeekingKeyhole = false;
+                if (currentPosition == PlayerPosition.PEEKING_KEYHOLE) {
+                    currentPosition = PlayerPosition.FRONT_ROOM;
                     logEvent("👀 Kamu berhenti mengintip lubang kunci.");
                     if (enemyA.isAtDoor() && (enemyA.getPatienceTimer() == 2 || enemyA.getPatienceTimer() == 1)) {
                         logEvent("👤 [SAFE] Kamu berhenti mengintip. The Red One pergi.");
@@ -982,8 +984,8 @@ public class GameGUI extends JPanel implements ResourceManaged {
                         startRetreatAnimation(enemyA);
                     }
                     officePanel.repaint();
-                } else if (isPeekingVent) {
-                    isPeekingVent = false;
+                } else if (currentPosition == PlayerPosition.PEEKING_VENT) {
+                    currentPosition = PlayerPosition.FRONT_ROOM;
                     logEvent("👀 Kamu berhenti mengecek ventilasi.");
                     officePanel.repaint();
                 } else if (lockpickPopupPanel.isVisible()) {
@@ -1033,7 +1035,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
         if (areEnemiesActive) {
             // ✨ MODIFIKASI: Enemy A pause jika sedang mengintip
             if (enemyA.isAtDoor() || getEnemyAtDoor() == null) {
-                if (!isPeekingKeyhole || !enemyA.isAtDoor()) {
+                if (currentPosition != PlayerPosition.PEEKING_KEYHOLE || !enemyA.isAtDoor()) {
                     enemyA.act();
                 }
             }
@@ -1101,7 +1103,18 @@ public class GameGUI extends JPanel implements ResourceManaged {
             }
 
             if (enemy.getPatienceTimer() <= 0) {
-                initiateJumpscareSequence(enemy);
+                if (currentPosition == PlayerPosition.CABINET) {
+                    if (hidEarly) {
+                        logEvent("👤 [SAFE] Kamu bersembunyi sebelum " + enemy.getName() + " mendekat. Ia menyerah.");
+                        AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                        startRetreatAnimation(enemy);
+                        hidEarly = false;
+                    } else {
+                        startStruggle(enemy);
+                    }
+                } else {
+                    initiateJumpscareSequence(enemy);
+                }
             }
             return;
         }
@@ -1136,7 +1149,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
             AudioManager.playSound("/assets/audio/sfx/door_close.wav");
             
             // Check if player is ALREADY peeking vent
-            if (isPeekingVent) {
+            if (currentPosition == PlayerPosition.PEEKING_VENT) {
                 logEvent("👤 [SAFE] Kamu memergoki Hina di ventilasi! Dia mundur.");
                 AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
                 startRetreatAnimation(enemy);
@@ -1154,7 +1167,18 @@ public class GameGUI extends JPanel implements ResourceManaged {
 
         // Phase 3: Execution (patience <= 0)
         if (enemy.getPatienceTimer() <= 0) {
-            initiateJumpscareSequence(enemy);
+            if (currentPosition == PlayerPosition.CABINET) {
+                if (hidEarly) {
+                    logEvent("👤 [SAFE] Kamu bersembunyi sebelum " + enemy.getName() + " mendekat. Ia menyerah.");
+                    AudioManager.playSound("/assets/audio/sfx/enemy_fail.wav");
+                    startRetreatAnimation(enemy);
+                    hidEarly = false;
+                } else {
+                    startStruggle(enemy);
+                }
+            } else {
+                initiateJumpscareSequence(enemy);
+            }
         }
     }
 
@@ -1334,6 +1358,9 @@ public class GameGUI extends JPanel implements ResourceManaged {
         btnLookLeft.setVisible(false);
         btnLookRight.setVisible(false);
 
+        // ✨ STEP 1: Paksa player kembali ke front room
+        currentPosition = PlayerPosition.FRONT_ROOM;
+
         if (player.isLeftDoorClosed()) {
             logEvent("💥 *BAM!* Pintu depan didobrak paksa!");
             player.toggleLeftDoor();
@@ -1343,12 +1370,20 @@ public class GameGUI extends JPanel implements ResourceManaged {
         }
 
         updateDoorVisuals();
-        startFlickerEffect(); // ✨ Tambahkan flicker sebagai peringatan terakhir 1 detik
         officePanel.repaint();
 
-        Timer peekTimer = new Timer(1000, e -> triggerJumpscare(enemy));
-        peekTimer.setRepeats(false);
-        peekTimer.start();
+        // ✨ STEP 2: Jeda sebentar sebelum lampu berkedip (Cinematic pause)
+        Timer pauseTimer = new Timer(600, e1 -> {
+            // ✨ STEP 3: Flicker / Lampu berkedip
+            startFlickerEffect();
+            
+            // ✨ STEP 4: Eksekusi Jumpscare setelah flicker selesai
+            Timer jumpTimer = new Timer(1200, e2 -> triggerJumpscare(enemy));
+            jumpTimer.setRepeats(false);
+            jumpTimer.start();
+        });
+        pauseTimer.setRepeats(false);
+        pauseTimer.start();
     }
 
     private void triggerJumpscare(Enemy enemy) {
@@ -1653,8 +1688,7 @@ public class GameGUI extends JPanel implements ResourceManaged {
     public boolean hasHallwayKey() { return hasHallwayKey; }
     public String getCurrentDisplayedText() { return currentDisplayedText; }
     
-    // ✨ Getters for Peek & Flashlight
-    public boolean isPeekingKeyhole() { return isPeekingKeyhole; }
-    public boolean isPeekingVent() { return isPeekingVent; }
+    public boolean isPeekingKeyhole() { return currentPosition == PlayerPosition.PEEKING_KEYHOLE; }
+    public boolean isPeekingVent() { return currentPosition == PlayerPosition.PEEKING_VENT; }
     public boolean isFlashlightOn() { return isFlashlightOn; }
 }
