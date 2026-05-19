@@ -1,5 +1,6 @@
 package com.ryujinsha.engine;
 
+import com.ryujinsha.database.DatabaseManager;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
@@ -78,6 +79,9 @@ public class MainFrame extends JFrame {
 
         preloadAssets();
 
+        // ✨ LEADERBOARD: Inisialisasi koneksi database
+        DatabaseManager.initialize();
+
         // ============================================================
         // TAMBAH SCREEN AWAL
         // ============================================================
@@ -126,6 +130,11 @@ public class MainFrame extends JFrame {
                 containerPanel.add(new EndingGUI(this), "ENDING");
                 cardLayout.show(containerPanel, "ENDING");
                 startFadeIn(null);
+                break;
+
+            case "LEADERBOARD":
+                containerPanel.add(new LeaderboardGUI(this), "LEADERBOARD");
+                cardLayout.show(containerPanel, "LEADERBOARD");
                 break;
 
             default:

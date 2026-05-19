@@ -111,7 +111,7 @@ public class MainMenuGUI extends JPanel implements ResourceManaged {
         JButton btnLeaderboard = createSmallStyledButton("LEADERBOARD");
         
         btnProfile.addActionListener(e -> JOptionPane.showMessageDialog(this, "Profile - Coming Soon!", "Info", JOptionPane.INFORMATION_MESSAGE));
-        btnLeaderboard.addActionListener(e -> JOptionPane.showMessageDialog(this, "Leaderboard - Coming Soon!", "Info", JOptionPane.INFORMATION_MESSAGE));
+        btnLeaderboard.addActionListener(e -> mainFrame.showScreen("LEADERBOARD"));
         
         topRightPanel.add(btnProfile);
         topRightPanel.add(btnLeaderboard);

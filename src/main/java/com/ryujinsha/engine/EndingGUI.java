@@ -26,6 +26,7 @@ public class EndingGUI extends JPanel implements ResourceManaged {
     private JLabel textLabel;
     private PixelButton btnRetry;
     private PixelButton btnMenu;
+    private PixelButton btnLeaderboard;
 
     public EndingGUI(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
@@ -94,6 +95,7 @@ public class EndingGUI extends JPanel implements ResourceManaged {
                 textLabel.setVisible(true);
                 btnRetry.setVisible(true);
                 btnMenu.setVisible(true);
+                btnLeaderboard.setVisible(true);
                 animationTimer.stop();
             }
             animPanel.repaint();
@@ -147,8 +149,13 @@ public class EndingGUI extends JPanel implements ResourceManaged {
         btnMenu.setVisible(false);
         btnMenu.addActionListener(e -> mainFrame.showScreen("MENU"));
 
+        btnLeaderboard = new PixelButton("LEADERBOARD");
+        btnLeaderboard.setVisible(false);
+        btnLeaderboard.addActionListener(e -> mainFrame.showScreen("LEADERBOARD"));
+
         layeredPane.add(btnRetry, JLayeredPane.PALETTE_LAYER);
         layeredPane.add(btnMenu, JLayeredPane.PALETTE_LAYER);
+        layeredPane.add(btnLeaderboard, JLayeredPane.PALETTE_LAYER);
     }
 
     private void setupResponsiveListener() {
@@ -166,10 +173,13 @@ public class EndingGUI extends JPanel implements ResourceManaged {
                     textLabel.setBounds(0, (int) (h * 0.2), w, 100);
                 }
                 if (btnRetry != null) {
-                    btnRetry.setBounds((w / 2) - 220, (int) (h * 0.6), 200, 60);
+                    btnRetry.setBounds((w / 2) - 330, (int) (h * 0.6), 200, 60);
                 }
                 if (btnMenu != null) {
-                    btnMenu.setBounds((w / 2) + 20, (int) (h * 0.6), 200, 60);
+                    btnMenu.setBounds((w / 2) - 100, (int) (h * 0.6), 200, 60);
+                }
+                if (btnLeaderboard != null) {
+                    btnLeaderboard.setBounds((w / 2) + 130, (int) (h * 0.6), 200, 60);
                 }
             }
         });

@@ -8,10 +8,10 @@ import javax.swing.JPanel;
 
 /**
  * Menangani semua rendering grafis untuk GameGUI.
- * Berperan sebagai View dalam pola MVC, sehingga GameGUI tidak terlalu penuh.
+ * Berperan sebagai View dalam pola MVC — membaca state dari GameContext.
  */
 public class GameRenderer extends JPanel {
-    private GameGUI game;
+    private GameContext ctx;
 
     // Path konstanta aset ruangan
     private static final String PATH_FRONT_ROOM = "/assets/rooms/front_room.png";
@@ -20,8 +20,8 @@ public class GameRenderer extends JPanel {
     private static final String PATH_BACK_DOOR_OPENED = "/assets/rooms/back_door_opened.png";
     private static final String PATH_HALLWAY = "/assets/rooms/hallway.png";
 
-    public GameRenderer(GameGUI game) {
-        this.game = game;
+    public GameRenderer(GameContext ctx) {
+        this.ctx = ctx;
         setOpaque(false);
     }
 
@@ -40,65 +40,66 @@ public class GameRenderer extends JPanel {
         // Ambil batas cangkang
         Rectangle bounds = RenderEngine.getGameBounds(pw, ph);
 
-        if (game.getCurrentState() == GameState.HALLWAY) {
+        if (ctx.getCurrentState() == GameState.HALLWAY) {
             paintHallway(g2d, bounds);
-        } else if (game.getCurrentPosition() == PlayerPosition.BACK_ROOM) {
+        } else if (ctx.getCurrentPosition() == PlayerPosition.BACK_ROOM) {
             paintBackRoom(g2d, bounds);
         } else {
             paintFrontRoom(g2d, bounds);
         }
 
-        if (game.getCurrentPosition() == PlayerPosition.CABINET) {
+        if (ctx.getCurrentPosition() == PlayerPosition.CABINET) {
             paintCabinetView(g2d, bounds, pw, ph);
-        } else if (game.getCurrentPosition() == PlayerPosition.FRONT_ROOM) {
-            if (game.isPeekingKeyhole()) {
-                paintKeyholeView(g2d, pw, ph);
-            } else if (game.isPeekingVent()) {
-                paintVentView(g2d, pw, ph);
-            }
+        } else if (ctx.isPeekingKeyhole()) {
+            paintKeyholeView(g2d, pw, ph);
+        } else if (ctx.isPeekingVent()) {
+            paintVentView(g2d, pw, ph);
         }
 
-        if (game.getVignetteIntensity() > 0) {
+        if (ctx.getVignetteIntensity() > 0) {
             paintVignette(g2d, pw, ph);
         }
 
         // Draw darkness overlay (FNAF 4 style atmosphere)
-        if (game.getCurrentState() != GameState.HALLWAY && game.getCurrentState() != GameState.GAMEOVER) {
+        if (ctx.getCurrentState() != GameState.HALLWAY && ctx.getCurrentState() != GameState.GAMEOVER) {
             paintDarknessOverlay(g2d, pw, ph);
         }
 
-        if (game.isFlickering()) {
-            g2d.setColor(new Color(0, 0, 0, (int) (game.getFlickerAlpha() * 255)));
+        if (ctx.isFlickering()) {
+            g2d.setColor(new Color(0, 0, 0, (int) (ctx.getFlickerAlpha() * 255)));
             g2d.fillRect(0, 0, pw, ph);
         }
 
-        if (game.isIncomingDialogVisible()) {
+        if (ctx.isIncomingDialogVisible()) {
             paintIncomingDialog(g2d, pw, ph);
         }
 
-        if (game.isHallwayCutsceneActive()) {
+        if (ctx.isHallwayCutsceneActive()) {
             paintHallwayCutscene(g2d, pw, ph);
         }
 
-        if (game.isRetreating()) {
+        if (ctx.isRetreating()) {
             paintRetreatOverlay(g2d, bounds);
         }
 
         if (MainFrame.isDevMode) {
             paintDevLogs(g2d);
         }
+
+        // ✨ LEADERBOARD: Timer HUD saat bermain
+        if (ctx.getCurrentState() == GameState.PLAYING || ctx.getCurrentState() == GameState.STRUGGLING
+                || ctx.getCurrentState() == GameState.LOCKPICKING) {
+            paintTimerHUD(g2d, pw, ph);
+        }
     }
 
     private void paintFrontRoom(Graphics2D g2d, Rectangle bounds) {
-        // ✨ Enemy A and B are NO LONGER rendered here. 
-        // They are strictly visible through the vent/keyhole peeking views.
-
         Image imgFront = AssetCache.get(PATH_FRONT_ROOM);
         if (imgFront != null) {
             g2d.drawImage(imgFront, bounds.x, bounds.y, bounds.width, bounds.height, this);
         }
 
-        if (game.getPlayer().isLeftDoorClosed()) {
+        if (ctx.getPlayer().isLeftDoorClosed()) {
             Image imgDoor = AssetCache.get(PATH_FRONT_DOOR);
             if (imgDoor != null) {
                 g2d.drawImage(imgDoor, bounds.x, bounds.y, bounds.width, bounds.height, this);
@@ -107,7 +108,7 @@ public class GameRenderer extends JPanel {
     }
 
     private void paintBackRoom(Graphics2D g2d, Rectangle bounds) {
-        boolean isUnlocked = (game.getLockBars() >= 6);
+        boolean isUnlocked = (ctx.getLockBars() >= 6);
         String path = isUnlocked ? PATH_BACK_DOOR_OPENED : PATH_BACK_DOOR;
         Image img = AssetCache.get(path);
         if (img != null) {
@@ -132,7 +133,7 @@ public class GameRenderer extends JPanel {
         }
 
         // Display inventory if key found
-        if (game.hasHallwayKey()) {
+        if (ctx.hasHallwayKey()) {
             g2d.setColor(Color.YELLOW);
             g2d.setFont(new Font("Consolas", Font.BOLD, 24));
             g2d.drawString("[ Kunci Lorong Didapatkan ]", bounds.x + 50, bounds.y + 100);
@@ -144,10 +145,10 @@ public class GameRenderer extends JPanel {
         g2d.setColor(new Color(0, 0, 0, 230));
         g2d.fillRect(0, 0, pw, ph);
 
-        String[] texts = game.getHallwayCutsceneTexts();
-        int index = game.getHallwayCutsceneIndex();
+        String[] texts = ctx.getHallwayCutsceneTexts();
+        int index = ctx.getHallwayCutsceneIndex();
         if (index < texts.length) {
-            String text = game.getCurrentDisplayedText(); // ✨ TYPEWRITER TEXT
+            String text = ctx.getCurrentDisplayedText(); // ✨ TYPEWRITER TEXT
             g2d.setFont(new Font("Consolas", Font.BOLD, 28));
             g2d.setColor(Color.WHITE);
             FontMetrics fm = g2d.getFontMetrics();
@@ -165,7 +166,7 @@ public class GameRenderer extends JPanel {
     }
 
     private void paintCabinetView(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
-        if (game.getCurrentState() == GameState.STRUGGLING && game.getQteBodyImg() != null) {
+        if (ctx.getCurrentState() == GameState.STRUGGLING && ctx.getQteBodyImg() != null) {
             paintStruggleQTE(g2d, bounds, pw, ph);
         } else {
             int slitWidth = (int) (bounds.width * HitboxConfig.CABINET_SLIT_WIDTH_FRACTION);
@@ -187,16 +188,16 @@ public class GameRenderer extends JPanel {
     }
 
     private void paintRetreatOverlay(Graphics2D g2d, Rectangle bounds) {
-        Image retreatImg = game.getRetreatImg();
-        Enemy lastDefeatedEnemy = game.getLastDefeatedEnemy();
+        Image retreatImg = ctx.getRetreatImg();
+        Enemy lastDefeatedEnemy = ctx.getLastDefeatedEnemy();
         if (retreatImg == null || lastDefeatedEnemy == null) return;
 
-        double progress = (double) game.getRetreatAnimTicks() / HitboxConfig.RETREAT_DURATION_TICKS;
+        double progress = (double) ctx.getRetreatAnimTicks() / HitboxConfig.RETREAT_DURATION_TICKS;
         double scaleFactor = 1.3 - (progress * 0.5); 
-        int xOffset = game.getRetreatAnimTicks() * HitboxConfig.RETREAT_SPEED_X;
+        int xOffset = ctx.getRetreatAnimTicks() * HitboxConfig.RETREAT_SPEED_X;
 
         int basePosX, basePosY, baseW, baseH;
-        if (lastDefeatedEnemy == game.getEnemyB()) {
+        if (lastDefeatedEnemy == ctx.getEnemyB()) {
             double hinaScale = scaleFactor * 1.5;
             basePosX = HitboxConfig.ENEMY_B_PHASE2_X + xOffset;
             basePosY = HitboxConfig.ENEMY_B_PHASE2_Y;
@@ -213,7 +214,7 @@ public class GameRenderer extends JPanel {
     }
 
     private void paintStruggleQTE(Graphics2D g2d, Rectangle bounds, int pw, int ph) {
-        double progressRatio = game.getStruggleValue() / 100.0;
+        double progressRatio = ctx.getStruggleValue() / 100.0;
         int slitWidth = (int) (HitboxConfig.QTE_SLIT_WIDTH_MAX - (progressRatio * (HitboxConfig.QTE_SLIT_WIDTH_MAX - HitboxConfig.QTE_SLIT_WIDTH_MIN)));
 
         int slitX = bounds.x + (bounds.width - slitWidth) / 2;
@@ -222,13 +223,13 @@ public class GameRenderer extends JPanel {
         int slitH = bounds.height - slitMarginV * 2;
 
         int bodyH = (int) (slitH * 1.4); 
-        int bodyOrigW = game.getQteBodyImg().getWidth(this);
-        int bodyOrigH = game.getQteBodyImg().getHeight(this);
+        int bodyOrigW = ctx.getQteBodyImg().getWidth(this);
+        int bodyOrigH = ctx.getQteBodyImg().getHeight(this);
         int bodyW = (bodyOrigH > 0) ? (bodyH * bodyOrigW / bodyOrigH) : slitWidth;
         int bodyX = bounds.x + (bounds.width - bodyW) / 2;
         int bodyY = slitY - (bodyH - slitH) / 2;
 
-        g2d.drawImage(game.getQteBodyImg(), bodyX, bodyY, bodyW, bodyH, this);
+        g2d.drawImage(ctx.getQteBodyImg(), bodyX, bodyY, bodyW, bodyH, this);
 
         g2d.setColor(Color.BLACK);
         g2d.fillRect(0, 0, slitX, ph);
@@ -236,18 +237,18 @@ public class GameRenderer extends JPanel {
         g2d.fillRect(slitX, 0, slitWidth, slitY);
         g2d.fillRect(slitX, slitY + slitH, slitWidth, ph - (slitY + slitH));
 
-        if (game.getQteHandLeftImg() != null && game.getQteHandRightImg() != null) {
+        if (ctx.getQteHandLeftImg() != null && ctx.getQteHandRightImg() != null) {
             int handH = (int) (slitH * 0.85);
-            int hOrigW = game.getQteHandLeftImg().getWidth(this);
-            int hOrigH = game.getQteHandLeftImg().getHeight(this);
+            int hOrigW = ctx.getQteHandLeftImg().getWidth(this);
+            int hOrigH = ctx.getQteHandLeftImg().getHeight(this);
             int handW = (hOrigH > 0) ? (handH * hOrigW / hOrigH) : (slitWidth / 2);
             int handY = slitY + (slitH - handH) / 2;
 
             int lx = slitX - handW + (handW / 5);
-            g2d.drawImage(game.getQteHandLeftImg(), lx, handY, handW, handH, this);
+            g2d.drawImage(ctx.getQteHandLeftImg(), lx, handY, handW, handH, this);
 
             int rx = slitX + slitWidth - (handW / 5);
-            g2d.drawImage(game.getQteHandRightImg(), rx, handY, handW, handH, this);
+            g2d.drawImage(ctx.getQteHandRightImg(), rx, handY, handW, handH, this);
         }
 
         g2d.setColor(Color.RED);
@@ -262,8 +263,8 @@ public class GameRenderer extends JPanel {
         g2d.setColor(Color.BLACK);
         g2d.fillRect(barX, barY, barW, barH);
 
-        if (game.getStruggleValue() < 30) g2d.setColor(Color.RED);
-        else if (game.getStruggleValue() < 70) g2d.setColor(Color.YELLOW);
+        if (ctx.getStruggleValue() < 30) g2d.setColor(Color.RED);
+        else if (ctx.getStruggleValue() < 70) g2d.setColor(Color.YELLOW);
         else g2d.setColor(Color.GREEN);
         
         g2d.fillRect(barX, barY, (int) ((progressRatio) * barW), barH);
@@ -271,13 +272,13 @@ public class GameRenderer extends JPanel {
         g2d.drawRect(barX, barY, barW, barH);
 
         g2d.setFont(new Font("Consolas", Font.BOLD, 18));
-        String instText = "SPAM KLIK ATAU SPASI! [" + game.getStruggleValue() + "%]";
+        String instText = "SPAM KLIK ATAU SPASI! [" + ctx.getStruggleValue() + "%]";
         FontMetrics fmT = g2d.getFontMetrics();
         g2d.drawString(instText, (pw - fmT.stringWidth(instText)) / 2, barY - 15);
     }
 
     private void paintVignette(Graphics2D g2d, int w, int h) {
-        float alpha = Math.min(0.8f, game.getVignetteIntensity());
+        float alpha = Math.min(0.8f, ctx.getVignetteIntensity());
         RadialGradientPaint rgp = new RadialGradientPaint(
                 new Point2D.Float(w / 2f, h / 2f),
                 Math.max(w, h) / 1.5f,
@@ -291,7 +292,7 @@ public class GameRenderer extends JPanel {
     private void paintDevLogs(Graphics2D g2d) {
         g2d.setFont(new Font("Consolas", Font.PLAIN, 14));
         int y = 30;
-        for (String log : game.getDevLogs()) {
+        for (String log : ctx.getDevLogs()) {
             g2d.setColor(new Color(0, 0, 0, 150));
             g2d.drawString(log, 22, y + 2);
             g2d.setColor(Color.CYAN);
@@ -339,8 +340,8 @@ public class GameRenderer extends JPanel {
             g2d.drawImage(tunnel, bounds.x, bounds.y, bounds.width, bounds.height, this);
         }
 
-        Enemy enemyA = game.getEnemyA();
-        if (enemyA.isAtDoor() && game.isFlashlightOn()) {
+        Enemy enemyA = ctx.getEnemyA();
+        if (enemyA.isAtDoor() && ctx.isFlashlightOn()) {
             Image enemySprite = null;
             if (enemyA.getPatienceTimer() == 2) {
                 enemySprite = AssetCache.get("/assets/enemies/enemy_a_door/idle/the-red-idle-phase-1.png");
@@ -405,8 +406,8 @@ public class GameRenderer extends JPanel {
             g2d.drawImage(ventBack, bounds.x, bounds.y, bounds.width, bounds.height, this);
         }
         // Enemy B — 3-Phase Vent Rendering
-        Enemy enemyB = game.getEnemyB();
-        if (enemyB.isAtDoor() && game.isFlashlightOn()) {
+        Enemy enemyB = ctx.getEnemyB();
+        if (enemyB.isAtDoor() && ctx.isFlashlightOn()) {
             Image ventSprite = null;
             int renderX, renderY, spriteW, spriteH;
 
@@ -445,7 +446,7 @@ public class GameRenderer extends JPanel {
     }
 
     private void paintDarknessOverlay(Graphics2D g2d, int pw, int ph) {
-        if (game.isFlashlightOn() && (game.getCurrentPosition() == PlayerPosition.FRONT_ROOM || game.getCurrentPosition() == PlayerPosition.PEEKING_KEYHOLE || game.getCurrentPosition() == PlayerPosition.PEEKING_VENT)) {
+        if (ctx.isFlashlightOn() && (ctx.getCurrentPosition() == PlayerPosition.FRONT_ROOM || ctx.getCurrentPosition() == PlayerPosition.BACK_ROOM || ctx.getCurrentPosition() == PlayerPosition.PEEKING_KEYHOLE || ctx.getCurrentPosition() == PlayerPosition.PEEKING_VENT)) {
             // Senter menyala: Buat gradien melingkar dari transparan ke hitam (FNAF 4 style)
             RadialGradientPaint rgp = new RadialGradientPaint(
                     new Point2D.Float(pw / 2f, ph / 2f),
@@ -461,4 +462,43 @@ public class GameRenderer extends JPanel {
             g2d.fillRect(0, 0, pw, ph);
         }
     }
+
+    // ============================================================
+    // TIMER HUD — Menampilkan waktu bermain di pojok kanan atas
+    // ============================================================
+    private void paintTimerHUD(Graphics2D g2d, int pw, int ph) {
+        String timeText = ctx.getFormattedElapsedTime();
+
+        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+        // Font & metrics
+        Font timerFont = new Font("Consolas", Font.BOLD, 22);
+        g2d.setFont(timerFont);
+        FontMetrics fm = g2d.getFontMetrics();
+
+        String label = "⏱ " + timeText;
+        int textW = fm.stringWidth(label);
+        int textH = fm.getHeight();
+
+        int padX = 14;
+        int padY = 8;
+        int boxW = textW + padX * 2;
+        int boxH = textH + padY * 2;
+        int boxX = pw - boxW - 20;
+        int boxY = 15;
+
+        // Background box semi-transparan
+        g2d.setColor(new Color(0, 0, 0, 160));
+        g2d.fillRoundRect(boxX, boxY, boxW, boxH, 10, 10);
+
+        // Border
+        g2d.setColor(new Color(255, 255, 255, 40));
+        g2d.setStroke(new BasicStroke(1));
+        g2d.drawRoundRect(boxX, boxY, boxW, boxH, 10, 10);
+
+        // Timer text
+        g2d.setColor(new Color(200, 200, 200));
+        g2d.drawString(label, boxX + padX, boxY + padY + fm.getAscent());
+    }
 }
+
